@@ -97,7 +97,13 @@ func (g *Gateway) probeFreeModel(ctx context.Context, model string) probeResult 
 	if !d.AvailableZen || !g.catalog.Supported(model) {
 		return probeResult{reason: "unsupported_probe"}
 	}
-	ids := identity.RequestIDs{Session: identity.CanonicalSessionID("availability:" + model), Project: "opencode2api:default-project"}
+	// Every probe is a fresh upstream identity. The free tier ledgers its
+	// quota per project id and egress, so a fixed project here would spend the
+	// same pre-burned bucket on every sweep and starve user traffic.
+	ids := identity.RequestIDs{
+		Session: identity.CanonicalSessionID("availability:" + model + ":" + identity.RandomID("probe", 8)),
+		Project: identity.RandomProjectID(),
+	}
 	type lane struct {
 		key, name, baseURL string
 		client             *http.Client
