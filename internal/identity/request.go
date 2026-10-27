@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"opencode2api/internal/jsonutil"
@@ -79,11 +80,10 @@ func DeriveRequestIDs(r *http.Request, body map[string]any, scope string) Reques
 	}
 	projectSignal := jsonutil.FirstString(r.Header.Get("x-opencode-project"), jsonutil.StringAt(body, "metadata", "project_id"))
 	if projectSignal == "" {
-		// A fresh project id per request. The free tier ledges its quota per
-		// project id and egress, so one shared id is one shared bucket: the old
-		// per-caller default arrived pre-burned on popular exits. A client that
-		// names its project keeps that name.
-		projectSignal = RandomProjectID()
+		// Keep one stable project per caller. The official client sends the
+		// git root commit of the current repository; a caller that does not
+		// name one gets the same 40-hex shape derived from its scope.
+		projectSignal = StableProjectID(scope)
 	}
 	parentSession := jsonutil.FirstString(
 		r.Header.Get("x-parent-session-id"),
@@ -103,15 +103,66 @@ func DeriveRequestIDs(r *http.Request, body map[string]any, scope string) Reques
 }
 
 // scopedSessionID keeps an official client-minted session verbatim and
-// re-encodes every other signal within the caller's scope.
+// re-encodes every other signal within the caller's scope. Derived sessions
+// are minted with the current timestamp on first sight and then reused, the
+// way the official client creates a session when a conversation starts.
 func scopedSessionID(scope, signal string) string {
 	if isOfficialSessionID(signal) {
 		return signal
 	}
-	if scope != "" {
-		signal = scope + "\x00" + signal
+	return derivedSessions.id(scope, signal, time.Now())
+}
+
+const (
+	derivedSessionTTL   = 6 * time.Hour
+	derivedSessionLimit = 8192
+)
+
+type derivedSessionEntry struct {
+	id   string
+	seen time.Time
+}
+
+// derivedSessionStore pins one session id to each (scope, signal) pair. The
+// id is minted with the current time, so its descending timestamp looks like
+// a session the official client just created, while a live conversation keeps
+// the same id across requests.
+type derivedSessionStore struct {
+	mu    sync.Mutex
+	items map[string]derivedSessionEntry
+}
+
+var derivedSessions = &derivedSessionStore{items: map[string]derivedSessionEntry{}}
+
+func (s *derivedSessionStore) id(scope, signal string, now time.Time) string {
+	key := scope + "\x00" + signal
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if entry, ok := s.items[key]; ok && now.Sub(entry.seen) <= derivedSessionTTL {
+		entry.seen = now
+		s.items[key] = entry
+		return entry.id
 	}
-	return CanonicalSessionID(signal)
+	scopedSignal := signal
+	if scope != "" {
+		scopedSignal = scope + "\x00" + signal
+	}
+	id := canonicalSessionIDAt(scopedSignal, now)
+	if len(s.items) >= derivedSessionLimit {
+		for itemKey, entry := range s.items {
+			if now.Sub(entry.seen) > derivedSessionTTL {
+				delete(s.items, itemKey)
+			}
+		}
+		if len(s.items) >= derivedSessionLimit {
+			for itemKey := range s.items {
+				delete(s.items, itemKey)
+				break
+			}
+		}
+	}
+	s.items[key] = derivedSessionEntry{id: id, seen: now}
+	return id
 }
 
 // claudeCodeSessionPattern extracts the per-session UUID Claude Code embeds in
@@ -205,28 +256,27 @@ const base62Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 // official OpenCode session minted by the client's Identifier.descending()
 // (preserving upstream prompt-cache affinity). Any other downstream identity
 // (UUIDs, foreign client sessions, legacy gateway sessions, conversation
-// seeds) is deterministically re-encoded into that exact layout — inverted
+// seeds) is deterministically re-encoded into that exact layout: an inverted
 // 48-bit millisecond timestamp with counter 1, so the low 12 hex digits are
-// ffe — while keeping the same stable session per conversation. A re-encoded
-// session passes the free tier's encoding check where the raw hash shape was
-// rejected with 403 FreeTierError.
+// ffe, plus a stable random part.
 //
-// The timestamp must also stay plausible. The free tier derives a risk window
-// from it: a session dated more than about a year from now, in either
-// direction, is answered with HTTP 429 "Free usage limit reached" — the same
-// message a genuinely exhausted IP receives — so a hash-derived timestamp
-// (which landed in 1970) made every free request fail however many WARP exits
-// were rotated. The encoding below therefore draws the timestamp from a slow
-// clock instead of the hash: today's UTC midnight minus a hash-derived offset
-// of at most sessionTimestampWindow. The id stays stable for a whole day, which
-// is all the affinity a live conversation needs, and its date never leaves the
-// window the upstream accepts.
+// The timestamp is the current millisecond, matching the official client. The
+// free tier derives a risk window from it: a session dated more than about a
+// year from now, in either direction, is answered with HTTP 429 "Free usage
+// limit reached". A hash-derived timestamp landed in 1970 and made every free
+// request fail. scopedSessionID keeps a derived session stable per conversation
+// by remembering the id minted on first sight.
 func CanonicalSessionID(signal string) string {
+	return canonicalSessionIDAt(signal, time.Now())
+}
+
+// canonicalSessionIDAt mints a descending session id with now's timestamp.
+func canonicalSessionIDAt(signal string, now time.Time) string {
 	if isOfficialSessionID(signal) {
 		return signal
 	}
 	sum := sha256.Sum256([]byte("ses\x00" + signal))
-	timePart := descendingTimePart(time.Now(), sum[:6])
+	timePart := descendingTimePart(now)
 	randomPart := base62Fixed(new(big.Int).SetBytes(sum[6:16]), 14)
 	return "ses_" + timePart + randomPart
 }
@@ -238,22 +288,12 @@ func isOfficialSessionID(signal string) bool {
 	return canonicalSessionPattern.MatchString(signal) && descendingTimePartPattern.MatchString(signal[4:16])
 }
 
-// sessionTimestampWindow bounds how far before today a synthesized session's
-// timestamp may fall. The upstream accepts a date roughly a year away in either
-// direction and rejects anything beyond with HTTP 429, so a month leaves room
-// for clock skew and long-lived processes while never approaching the edge.
-const sessionTimestampWindow = 30 * 24 * time.Hour
-
-// descendingTimePart renders a plausible recent timestamp in the official
-// client's Identifier.descending() layout: a 36-bit timestamp shifted into the
-// top of a 48-bit word, ORed with counter 1, then bitwise-NOT-ed so the low 12
-// hex digits read ffe. The hash only picks the offset within
-// sessionTimestampWindow; it never supplies the date itself.
-func descendingTimePart(now time.Time, hash []byte) string {
-	window := uint64(sessionTimestampWindow / time.Millisecond)
-	offset := (uint64(hash[0])<<24 | uint64(hash[1])<<16 | uint64(hash[2])<<8 | uint64(hash[3])) % window
-	base := now.UTC().Truncate(24 * time.Hour).Add(-time.Duration(offset) * time.Millisecond)
-	current := uint64(base.UnixMilli())<<12 | 1
+// descendingTimePart renders a current timestamp in the official client's
+// Identifier.descending() layout: a 36-bit millisecond timestamp shifted into
+// the top of a 48-bit word, ORed with counter 1, then bitwise-NOT-ed so the low
+// 12 hex digits read ffe.
+func descendingTimePart(now time.Time) string {
+	current := uint64(now.UTC().UnixMilli())<<12 | 1
 	inverted := ^current & 0xFFFFFFFFFFFF
 	return hex.EncodeToString([]byte{
 		byte(inverted >> 40), byte(inverted >> 32), byte(inverted >> 24),
@@ -284,14 +324,13 @@ func RandomID(prefix string, size int) string {
 	return prefix + "_" + hex.EncodeToString(buf)
 }
 
-// RandomProjectID returns a project id in the shape the official CLI sends: the
-// 40-character hex of a git root commit. It is minted per request when the
-// client names no project, because the free tier ledges quota per project id
-// and egress together. It panics when the system random source fails.
-func RandomProjectID() string {
-	buf := make([]byte, 20)
-	if _, err := rand.Read(buf); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+// StableProjectID returns a stable 40-hex project id for scope, the shape the
+// official CLI sends for a git root commit. Callers that do not name a project
+// keep one project per scope instead of a new random id on every request.
+func StableProjectID(scope string) string {
+	if scope == "" {
+		scope = "default"
 	}
-	return hex.EncodeToString(buf)
+	sum := sha256.Sum256([]byte("project\x00" + scope))
+	return hex.EncodeToString(sum[:20])
 }

@@ -102,7 +102,7 @@ func (g *Gateway) probeFreeModel(ctx context.Context, model string) probeResult 
 	// same pre-burned bucket on every sweep and starve user traffic.
 	ids := identity.RequestIDs{
 		Session: identity.CanonicalSessionID("availability:" + model + ":" + identity.RandomID("probe", 8)),
-		Project: identity.RandomProjectID(),
+		Project: identity.StableProjectID("probe"),
 	}
 	type lane struct {
 		key, name, baseURL, org string

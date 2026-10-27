@@ -256,9 +256,9 @@ System One 将自由文本状态与类型化问题配对，并返回类型化答
 
 ### 官方系统提示词
 
-每个经过整形的免费模型请求都会携带 OpenCode CLI 自身的系统提示词——基础指令、`<env>` 环境块和内置 skill 列表——因为免费层级会校验请求是否具有 agent 形态。v1 `/zen` 使用 1.x 工具名，`/inference` 与 `/zen/go` 使用 2.x 工具名。环境块包含请求的模型、网关工作目录、平台和 UTC 日期。
+每个经过整形的免费模型请求都会携带 OpenCode CLI 自身的系统提示词——基础指令、技能列表和 `<env>` 环境块——因为免费层级会校验请求是否具有 agent 形态。v1 `/zen` 使用 1.x 提示词和工具名；`/inference` 与 `/zen/go` 使用 OpenCode 2.1.4 的 base prompt，技能列表位于环境块之前，环境块包含网关工作目录、git 状态、平台、UTC 日期和 `/tmp/opencode` 提示。
 
-注入按协议处理：Chat 的系统与 developer 消息会合并为一条位于最前的 `system` 消息；Anthropic 写入 `system`（字符串，或调用方提供块列表时在最前插入文本块）；Responses 写入 `instructions`。如果系统内容中已包含标记 `You are opencode, an interactive CLI tool`，请求会原样通过，因此已经发送官方提示词的客户端不会被重复注入。通过 Zen 或 Go Key 提供的免费模型也会接受同样的整形，只是仍然从对应 Tier 的代理出网。
+注入按协议处理：Chat 的系统与 developer 消息会合并为一条位于最前的 `system` 消息；Anthropic 写入 `system`（字符串，或调用方提供块列表时在最前插入文本块）；Responses 写入 `instructions`。如果系统内容中已包含 1.x 的 `You are opencode, an interactive CLI tool` 或 2.x 的 `You are an AI agent running in OpenCode` 标记，请求会原样通过，因此已经发送官方提示词的客户端不会被重复注入。通过 Zen 或 Go Key 提供的免费模型也会接受同样的整形，只是仍然从对应 Tier 的代理出网。
 
 ### 工具整形
 

@@ -32,9 +32,8 @@ var opencodePromptMarkers = []string{
 	"You are an AI agent running in OpenCode",
 }
 
-// opencodeSkills is the built-in skill listing the CLI appends after its
-// environment block. It is static, so it is part of the injected prompt.
-const opencodeSkills = `Skills provide specialized instructions and workflows for specific tasks.
+// opencodeSkillsV1 is the built-in skill listing the 1.x CLI appends.
+const opencodeSkillsV1 = `Skills provide specialized instructions and workflows for specific tasks.
 Use the skill tool to load a skill when a task matches its description.
 <available_skills>
   <skill>
@@ -44,15 +43,25 @@ Use the skill tool to load a skill when a task matches its description.
   </skill>
 </available_skills>`
 
+// opencodeSkillsV2 is the 2.1.4 skill preamble and built-in listing.
+const opencodeSkillsV2 = `Skills provide specialized instructions and workflows for specific tasks.
+Use the skill tool to load a skill when a task matches its description.
+The user may also invoke a skill directly. When that happens, its instructions appear in the conversation as a <skill_content> block, the same shape the skill tool returns. A skill that is already present this way does not need to be invoked again.
+<available_skills>
+  <skill>
+    <id>customize-opencode</id>
+    <name>customize-opencode</name>
+    <description>Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.</description>
+  </skill>
+</available_skills>`
+
 var (
 	opencodeEnvOnce sync.Once
 	opencodeWorkDir string
 )
 
-// opencodeEnvironment renders the <env> block the CLI puts after its base
-// prompt. The working directory is resolved once per process; a platform
-// without one falls back to the official container path.
-func opencodeEnvironment(model string) string {
+// opencodeDirectory resolves the working directory once per process.
+func opencodeDirectory() string {
 	opencodeEnvOnce.Do(func() {
 		directory := ""
 		if current, err := os.Getwd(); err == nil {
@@ -63,35 +72,70 @@ func opencodeEnvironment(model string) string {
 		}
 		opencodeWorkDir = directory
 	})
-	apiModel := strings.TrimSpace(strings.TrimPrefix(model, "opencode/"))
-	if apiModel == "" {
-		apiModel = "unknown"
-	}
+	return opencodeWorkDir
+}
+
+// opencodePlatform renders the platform name the CLI puts in <env>.
+func opencodePlatform() string {
 	platform := runtime.GOOS
 	if platform == "windows" {
 		platform = "win32"
 	}
+	return platform
+}
+
+// opencodeEnvironmentV1 renders the 1.x environment block.
+func opencodeEnvironmentV1(model string) string {
+	apiModel := strings.TrimSpace(strings.TrimPrefix(model, "opencode/"))
+	if apiModel == "" {
+		apiModel = "unknown"
+	}
+	directory := opencodeDirectory()
 	return strings.Join([]string{
 		"You are powered by the model named " + apiModel + ". The exact model ID is opencode/" + apiModel,
 		"Here is some useful information about the environment you are running in:",
 		"<env>",
-		"  Working directory: " + opencodeWorkDir,
-		"  Workspace root folder: " + opencodeWorkDir,
+		"  Working directory: " + directory,
+		"  Workspace root folder: " + directory,
 		"  Is directory a git repo: yes",
-		"  Platform: " + platform,
+		"  Platform: " + opencodePlatform(),
 		"  Today's date: " + time.Now().UTC().Format("Mon Jan 02 2006"),
 		"</env>",
 	}, "\n")
 }
 
-// opencodeSystemPrompt assembles the full CLI system prompt for model and the
-// upstream generation's tool naming.
-func opencodeSystemPrompt(model string, v1 bool) string {
-	base := opencodePromptV2
-	if v1 {
-		base = opencodePromptV1
+// opencodeEnvironmentV2 renders the 2.1.4 environment block. Values the client
+// derives locally (directory, git status, platform) are derived here; the date
+// and the approved temporary directory match the 2.1.4 layout.
+func opencodeEnvironmentV2() string {
+	directory := opencodeDirectory()
+	gitRepo := "no"
+	if info, err := os.Stat(filepath.Join(directory, ".git")); err == nil && info.IsDir() {
+		gitRepo = "yes"
 	}
-	return base + opencodeEnvironment(model) + "\n" + opencodeSkills
+	_ = os.MkdirAll("/tmp/opencode", 0o777)
+	return strings.Join([]string{
+		"Today's date: " + time.Now().UTC().Format("Mon Jan 02 2006"),
+		"",
+		"Here is some useful information about the environment you are running in:",
+		"<env>",
+		"  Working directory: " + directory,
+		"  Workspace root folder: " + directory,
+		"  Is directory a git repo: " + gitRepo,
+		"  Platform: " + opencodePlatform(),
+		"  Prefer /tmp/opencode over generic system temporary directories such as /tmp; it is pre-created and approved for external access.",
+		"</env>",
+		"When you create a worktree outside the current working directory and intend to use it as your primary working directory, consider using `execute` to call `tools.opencode.session_move` and make the worktree the session's working directory.",
+	}, "\n")
+}
+
+// opencodeSystemPrompt assembles the full CLI system prompt. The 2.1.4 client
+// places the skill listing before the environment, so v2 follows that order.
+func opencodeSystemPrompt(model string, v1 bool) string {
+	if v1 {
+		return opencodePromptV1 + opencodeEnvironmentV1(model) + "\n" + opencodeSkillsV1
+	}
+	return opencodePromptV2 + "\n" + opencodeSkillsV2 + "\n\n" + opencodeEnvironmentV2()
 }
 
 // injectOfficialPrompt prepends the official CLI system prompt to a shaped
