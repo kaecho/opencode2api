@@ -222,6 +222,9 @@ func (g *Gateway) probeAttempt(parent context.Context, client *http.Client, base
 	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
 	ids.Request = identity.RandomID("req", 16)
+	if key != "" && key != anonymousZenKey {
+		ids = identity.ForUpstreamKey(ids, config.Fingerprint(key), time.Now())
+	}
 	req, err := upstreamRequest(ctx, baseURL, protocol, b, ids, key)
 	if err != nil {
 		return probeResult{reason: "request_creation_error"}

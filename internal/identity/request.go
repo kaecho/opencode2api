@@ -165,6 +165,45 @@ func (s *derivedSessionStore) id(scope, signal string, now time.Time) string {
 	return id
 }
 
+// ForUpstreamKey isolates one pool key's upstream identity. Every key gets
+// its own project and session, even when the downstream client named one, so
+// keys never share a project bucket or an upstream session. The project
+// rotates with the UTC day; sessions are pinned per key and conversation.
+func ForUpstreamKey(ids RequestIDs, keyID string, now time.Time) RequestIDs {
+	if keyID == "" {
+		return ids
+	}
+	ids.Project = ProjectForKey(ids.Project, keyID, now)
+	ids.Session = SessionForKey(ids.Session, keyID)
+	if ids.ChildSession != "" {
+		ids.ChildSession = SessionForKey(ids.ChildSession, keyID)
+	}
+	if ids.ParentSession != "" {
+		ids.ParentSession = SessionForKey(ids.ParentSession, keyID)
+	}
+	return ids
+}
+
+// ProjectForKey derives a per-key project id for the UTC day. The official
+// client uses a stable project per repository; the pool rotates the bucket
+// once per day so one exhausted project does not pin every request forever.
+func ProjectForKey(base, keyID string, now time.Time) string {
+	day := now.UTC().Format("20060102")
+	sum := sha256.Sum256([]byte("project\x00" + base + "\x00" + keyID + "\x00" + day))
+	return hex.EncodeToString(sum[:20])
+}
+
+// SessionForKey mints a session scoped to one key and one downstream session.
+// The id is current when first seen and reused for the life of the
+// conversation, so switching keys switches the upstream session without
+// changing the client's conversation.
+func SessionForKey(base, keyID string) string {
+	if base == "" {
+		return ""
+	}
+	return derivedSessions.id("upstream:"+keyID, base, time.Now())
+}
+
 // claudeCodeSessionPattern extracts the per-session UUID Claude Code embeds in
 // metadata.user_id ("user_<hash>_account_<uuid>_session_<uuid>").
 var claudeCodeSessionPattern = regexp.MustCompile(`_session_([0-9A-Fa-f-]{36})$`)

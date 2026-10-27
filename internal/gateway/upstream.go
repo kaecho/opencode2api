@@ -845,7 +845,8 @@ func (g *Gateway) doSelectedKeyUpstream(ctx context.Context, route models.Route,
 	} else {
 		setRequestCredential(ctx, override.Tier, keyID, "key", false, proxy)
 	}
-	req, err := upstreamRequest(ctx, baseURL, route.ProtocolFor(override.Tier), body, ids, node.key)
+	attemptIDs := identity.ForUpstreamKey(ids, config.Fingerprint(node.key), time.Now())
+	req, err := upstreamRequest(ctx, baseURL, route.ProtocolFor(override.Tier), body, attemptIDs, node.key)
 	if err != nil {
 		return nil, err, 0
 	}
@@ -935,7 +936,8 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 			httpx.DrainAndClose(lastResponse.Body)
 			lastResponse = nil
 		}
-		req, err := upstreamRequest(ctx, baseURL, route.Protocol, body, ids, node.key)
+		attemptIDs := identity.ForUpstreamKey(ids, config.Fingerprint(node.key), time.Now())
+		req, err := upstreamRequest(ctx, baseURL, route.Protocol, body, attemptIDs, node.key)
 		if err != nil {
 			return nil, err, attempts
 		}

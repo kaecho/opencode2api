@@ -232,7 +232,8 @@ func (g *Gateway) rotationAttempt(parent context.Context, w http.ResponseWriter,
 		result.err = errors.New("no proxy")
 		return result
 	}
-	req, err := upstreamRequest(ctx, g.cfg.Upstream.Go, route.Protocol, body, ids, node.key)
+	attemptIDs := identity.ForUpstreamKey(ids, config.Fingerprint(node.key), time.Now())
+	req, err := upstreamRequest(ctx, g.cfg.Upstream.Go, route.Protocol, body, attemptIDs, node.key)
 	if err != nil {
 		result.err = err
 		return result
