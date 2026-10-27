@@ -635,15 +635,27 @@ func prepareAnonymousBody(body []byte, protocol wire.Protocol, v1 bool) ([]byte,
 // chat body, so the free tier always sees the same ceiling.
 const v2CompletionLimit = 32000
 
-// ensureV2CompletionLimit adds the client's own max_completion_tokens when the
-// caller did not ask for a ceiling. A caller-supplied max_tokens or
-// max_completion_tokens wins, so an explicit limit is still honoured. It
-// reports whether the payload changed.
+// ensureV2CompletionLimit normalizes the output ceiling to the v2 field.
+// A positive caller max_tokens wins over max_completion_tokens: a wrapper can
+// add max_tokens to the 2.x body without removing the client's 32000 default,
+// and the caller's ceiling must still take effect. The value is moved to
+// max_completion_tokens and max_tokens is dropped so the upstream sees one
+// ceiling in the v2 shape. Without a caller ceiling, the 2.x default is added.
+// It reports whether the payload changed.
 func ensureV2CompletionLimit(payload map[string]any) bool {
-	if _, ok := payload["max_completion_tokens"]; ok {
-		return false
+	if maxTokens := jsonutil.IntAt(payload, "max_tokens"); maxTokens > 0 {
+		changed := false
+		if jsonutil.IntAt(payload, "max_completion_tokens") != maxTokens {
+			payload["max_completion_tokens"] = maxTokens
+			changed = true
+		}
+		if _, ok := payload["max_tokens"]; ok {
+			delete(payload, "max_tokens")
+			changed = true
+		}
+		return changed
 	}
-	if _, ok := payload["max_tokens"]; ok {
+	if _, ok := payload["max_completion_tokens"]; ok {
 		return false
 	}
 	payload["max_completion_tokens"] = v2CompletionLimit

@@ -244,6 +244,8 @@ System One 将自由文本状态与类型化问题配对，并返回类型化答
 
 免费模型不需要 Zen Key：启用 `anonymous: true` 后由匿名通道提供，已配置的 Key 只作为回退。如果想保留 Key 但只暴露免费模型，设置 `models.free_only: true`：付费模型不再出现在 `/v1/models`，直接请求会被拒绝，轮转别名只保留免费成员；免费模型仍可回退到已配置的 Key。
 
+免费模型的 v2 请求默认补 `max_completion_tokens: 32000`；客户端显式 `max_tokens` 会覆盖这个默认值，并归一化为上游的 `max_completion_tokens`。只发 `max_completion_tokens` 时按原值透传。
+
 免费模型的上游身份按 Key 隔离：project 由调用方 scope、Key 指纹和 UTC 日期派生，每天 UTC 00:00 刷新；session 按 Key 和下游会话派生，同一会话切换 Key 时不会共用上游 session。多个 Key 因此各自拥有独立的 project 桶，不会因为一个 Key 的 project 用尽而影响其他 Key。
 
 ### 免费模型 WARP 出口

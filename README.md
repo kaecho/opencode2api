@@ -244,6 +244,8 @@ When only anonymous access is configured, `/v1/models` exposes only models eligi
 
 Free models never need a Zen key: with `anonymous: true` they are served by the public lane, and a configured key is only their fallback. To keep keys but expose free models only, set `models.free_only: true`. Paid models then disappear from `/v1/models`, direct requests for them are rejected, and rotation aliases keep only free members; free models may still fall back to the configured keys.
 
+Free-model v2 requests default to `max_completion_tokens: 32000`; an explicit client `max_tokens` overrides that default and is normalized to the upstream `max_completion_tokens` field. A client-supplied `max_completion_tokens` is passed through unchanged.
+
 ### WARP egress for free models
 
 `warp.enabled` moves every free-model request on a free lane — the anonymous lane, the free-model fallback through a Zen key, free-model availability probes, and the anonymous catalog refresh — onto a userspace Cloudflare WARP tunnel. Those requests use no proxy, so the free tier sees the WARP exit address instead of a configured node. Go-plan keys and paid models keep their proxy bindings.
