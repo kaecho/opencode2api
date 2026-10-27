@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +55,19 @@ func TestSetOrgHeader(t *testing.T) {
 	setOrgHeader(empty, "https://opencode.ai/inference", "")
 	if got := empty.Header.Get("x-opencode-org-id"); got != "" {
 		t.Fatalf("empty org header = %q", got)
+	}
+}
+
+func TestSetTraceHeaders(t *testing.T) {
+	header := http.Header{}
+	setTraceHeaders(header)
+	b3 := header.Get("b3")
+	parts := strings.Split(b3, "-")
+	if len(parts) != 4 || len(parts[0]) != 32 || len(parts[1]) != 16 || parts[2] != "1" || len(parts[3]) != 16 {
+		t.Fatalf("b3 = %q", b3)
+	}
+	traceparent := header.Get("traceparent")
+	if !strings.HasPrefix(traceparent, "00-"+parts[0]+"-"+parts[1]+"-01") {
+		t.Fatalf("traceparent = %q", traceparent)
 	}
 }

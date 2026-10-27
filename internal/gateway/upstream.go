@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1291,9 +1292,27 @@ func setV2Headers(header http.Header, protocol wire.Protocol, ids identity.Reque
 	header.Set("x-opencode-session-id", childSession)
 	header.Set("User-Agent", httpx.V2UserAgent())
 	header.Set("x-opencode-project", projectID(ids.Project))
+	setTraceHeaders(header)
 	if protocol == wire.Anthropic {
 		header.Set("anthropic-beta", "interleaved-thinking-2025-05-14")
 	}
+}
+
+// setTraceHeaders adds the two tracing headers the 2.x client sends on every
+// model request. They are per-request random identifiers; the free-tier gate
+// sees them on official traffic, so a request without them is a shape outlier.
+func setTraceHeaders(header http.Header) {
+	trace := make([]byte, 16)
+	span := make([]byte, 8)
+	parent := make([]byte, 8)
+	_, _ = rand.Read(trace)
+	_, _ = rand.Read(span)
+	_, _ = rand.Read(parent)
+	traceID := hex.EncodeToString(trace)
+	spanID := hex.EncodeToString(span)
+	parentID := hex.EncodeToString(parent)
+	header.Set("b3", traceID+"-"+spanID+"-1-"+parentID)
+	header.Set("traceparent", "00-"+traceID+"-"+spanID+"-01")
 }
 
 // v1ProviderUtils names the provider-utils version of the AI SDK package the

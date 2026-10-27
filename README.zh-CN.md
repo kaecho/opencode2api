@@ -262,7 +262,7 @@ System One 将自由文本状态与类型化问题配对，并返回类型化答
 
 ### 工具整形
 
-每个经过整形的免费模型请求中，网关会把客户端声明的每个具名工具改名为 `clint_<name>`——`A-Za-z0-9_-` 之外的字符替换为 `_`，名称最长 64 字节，冲突时追加 `_2`、`_3` 等后缀——并追加该通道的完整官方工具集：`/zen` 使用 1.x 定义（`bash`、`edit`、`glob`、`grep`、`read`、`skill`、`task`、`todowrite`、`webfetch`、`websearch`、`write`），`/inference` 与 `/zen/go` 使用 13 个工具的 2.x 定义。没有 `tools`、`tools` 为空数组或使用旧版 `functions` 数组的请求同样会补全官方工具集；`tool_choice`、旧版 `function_call` 和工具调用历史会同步改写。Responses 内置工具和 Anthropic 服务端工具保持不变。
+每个经过整形的免费模型请求中，网关会把客户端声明的每个具名工具改名为 `clint_<name>`——`A-Za-z0-9_-` 之外的字符替换为 `_`，名称最长 64 字节，冲突时追加 `_2`、`_3` 等后缀——并追加该通道的完整官方工具集：`/zen` 使用 1.x 定义（`bash`、`edit`、`glob`、`grep`、`read`、`skill`、`task`、`todowrite`、`webfetch`、`websearch`、`write`），`/inference` 与 `/zen/go` 使用 12 个工具的 2.x 定义。没有 `tools`、`tools` 为空数组或使用旧版 `functions` 数组的请求同样会补全官方工具集；`tool_choice`、旧版 `function_call` 和工具调用历史会同步改写。Responses 内置工具和 Anthropic 服务端工具保持不变。
 
 响应会恢复为客户端声明的名称，流式与非流式均适用，包括被拆分到多个 Chat 分块中的工具名。如果上游调用了客户端从未声明的官方工具，该名称会原样透传：网关不会重放或隐藏官方工具调用。
 
