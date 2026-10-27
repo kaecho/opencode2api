@@ -848,6 +848,7 @@ func (g *Gateway) doSelectedKeyUpstream(ctx context.Context, route models.Route,
 	if err != nil {
 		return nil, err, 0
 	}
+	setOrgHeader(req, baseURL, node.org)
 	if !useWARP && proxy.pool {
 		req.Close = true
 	}
@@ -937,6 +938,7 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 		if err != nil {
 			return nil, err, attempts
 		}
+		setOrgHeader(req, baseURL, node.org)
 		proxy := nodes.Proxy(node)
 		if !useWARP {
 			if proxy == nil {
@@ -1146,6 +1148,16 @@ func (g *Gateway) recordUpstreamAttempt(ctx context.Context, route models.Route,
 		KeyID: keyID, Channel: channel, Anonymous: anonymous, Proxy: proxyName, Status: status,
 		DurationMS: max(duration.Milliseconds(), 0), Success: success, Outcome: outcome,
 	})
+}
+
+// setOrgHeader attaches the workspace the console reports for a key. The 2.x
+// gates attribute free-tier quota to this workspace, so a keyed request that
+// omits it is treated like anonymous traffic. The 1.x lane has no such header.
+func setOrgHeader(req *http.Request, baseURL, org string) {
+	if org == "" || models.IsV1Upstream(baseURL) {
+		return
+	}
+	req.Header.Set("x-opencode-org-id", org)
 }
 
 // upstreamRequest builds the POST for one attempt: baseURL plus the protocol's

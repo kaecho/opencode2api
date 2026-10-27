@@ -597,7 +597,11 @@ func isProxyFailure(err error) bool {
 // upstreamNode keeps a key stable while allowing its proxy binding to change
 // atomically when a proxy becomes unavailable.
 type upstreamNode struct {
-	key            string
+	key string
+	// org is the workspace id the key's console configuration reports. The
+	// v2 free-tier gate attributes quota to this workspace, so keyed requests
+	// carry it as x-opencode-org-id. Empty when the console lookup failed.
+	org            string
 	index          int
 	preferredProxy int
 	proxyIndex     atomic.Int64

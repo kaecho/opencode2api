@@ -119,6 +119,8 @@ func New(cfg config.Config, logger *slog.Logger, monitor *telemetry.Metrics, war
 	if err != nil {
 		return nil, fmt.Errorf("go node pool: %w", err)
 	}
+	zenNodes.LoadOrgIDs(logger)
+	goNodes.LoadOrgIDs(logger)
 	catalog := models.Catalog(cfg.Prefer, cfg.Models.Protocols)
 	catalog.SetRefreshInterval(time.Duration(cfg.Models.RefreshSeconds) * time.Second)
 	catalog.SetFreeOnly(cfg.Models.FreeOnly)

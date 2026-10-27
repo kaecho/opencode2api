@@ -105,9 +105,9 @@ func (g *Gateway) probeFreeModel(ctx context.Context, model string) probeResult 
 		Project: identity.RandomProjectID(),
 	}
 	type lane struct {
-		key, name, baseURL string
-		client             *http.Client
-		warp               bool
+		key, name, baseURL, org string
+		client                  *http.Client
+		warp                    bool
 	}
 	var lanes []lane
 	anonymousPaused := false
@@ -156,7 +156,7 @@ func (g *Gateway) probeFreeModel(ctx context.Context, model string) probeResult 
 			return probeResult{reason: "canceled"}
 		}
 		run := func(effort string) probeResult {
-			return g.probeAttempt(ctx, lane.client, lane.baseURL, lane.key, model, protocol, ids, effort, lane.warp)
+			return g.probeAttempt(ctx, lane.client, lane.baseURL, lane.key, lane.org, model, protocol, ids, effort, lane.warp)
 		}
 		result = run("")
 		result.channel = lane.name
@@ -214,7 +214,7 @@ func (g *Gateway) probeFreeModel(ctx context.Context, model string) probeResult 
 // document has the protocol's result field; a failure carries a reason code
 // (http_<status>, model_unavailable, probe_timeout, warp_unavailable, ...) and
 // whether the upstream rejected the reasoning effort.
-func (g *Gateway) probeAttempt(parent context.Context, client *http.Client, baseURL, key, model string, protocol wire.Protocol, ids identity.RequestIDs, effort string, overWARP bool) probeResult {
+func (g *Gateway) probeAttempt(parent context.Context, client *http.Client, baseURL, key, org, model string, protocol wire.Protocol, ids identity.RequestIDs, effort string, overWARP bool) probeResult {
 	b, err := probePayload(model, protocol, effort, models.IsV1Upstream(baseURL))
 	if err != nil {
 		return probeResult{reason: "request_conversion_error"}
@@ -226,6 +226,7 @@ func (g *Gateway) probeAttempt(parent context.Context, client *http.Client, base
 	if err != nil {
 		return probeResult{reason: "request_creation_error"}
 	}
+	setOrgHeader(req, baseURL, org)
 	result := probeResult{attempted: true}
 	var resp *http.Response
 	if overWARP {

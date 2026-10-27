@@ -237,6 +237,7 @@ func (g *Gateway) rotationAttempt(parent context.Context, w http.ResponseWriter,
 		result.err = err
 		return result
 	}
+	setOrgHeader(req, g.cfg.Upstream.Go, node.org)
 	// A reused connection must not cause net/http to implicitly replay POSTs.
 	req.GetBody = nil
 	client := *proxy.client
