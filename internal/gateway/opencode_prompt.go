@@ -15,8 +15,8 @@ import (
 // The free tier accepts only agent-shaped requests, and its abuse checks expect
 // the system prompt the official CLI sends. These assets are the CLI's own
 // wording: the v1 text for /zen (OpenCode 1.x tool names) and the v2 text for
-// /inference and /zen/go (OpenCode 2.x tool names). The v2 file is the v1 file
-// with the tool names the 2.x CLI uses.
+// /inference and /zen/go (OpenCode 2.1.4). The v2 file is the official base
+// prompt; the dynamic environment and skill listing are appended at runtime.
 //
 //go:embed opencode_prompt_v1.txt
 var opencodePromptV1 string
@@ -24,9 +24,13 @@ var opencodePromptV1 string
 //go:embed opencode_prompt_v2.txt
 var opencodePromptV2 string
 
-// opencodePromptMarker identifies a body that already carries the official CLI
-// system prompt, so a client that sends it itself is left alone.
-const opencodePromptMarker = "You are opencode, an interactive CLI tool"
+// opencodePromptMarkers identify a body that already carries an official CLI
+// system prompt, so a client that sends one itself is left alone. The v1 and
+// v2 clients use different opening lines.
+var opencodePromptMarkers = []string{
+	"You are opencode, an interactive CLI tool",
+	"You are an AI agent running in OpenCode",
+}
 
 // opencodeSkills is the built-in skill listing the CLI appends after its
 // environment block. It is static, so it is part of the injected prompt.
@@ -226,8 +230,10 @@ func textFragments(value any) []string {
 // the marker.
 func carriesOpenCodePrompt(value any) bool {
 	for _, part := range textFragments(value) {
-		if strings.Contains(part, opencodePromptMarker) {
-			return true
+		for _, marker := range opencodePromptMarkers {
+			if strings.Contains(part, marker) {
+				return true
+			}
 		}
 	}
 	return false

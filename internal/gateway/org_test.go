@@ -71,3 +71,14 @@ func TestSetTraceHeaders(t *testing.T) {
 		t.Fatalf("traceparent = %q", traceparent)
 	}
 }
+
+func TestCarriesOpenCodePrompt(t *testing.T) {
+	for _, marker := range opencodePromptMarkers {
+		if !carriesOpenCodePrompt(marker + " with more instructions") {
+			t.Fatalf("marker %q not recognized", marker)
+		}
+	}
+	if carriesOpenCodePrompt("an unrelated system prompt") {
+		t.Fatal("unrelated prompt recognized")
+	}
+}
