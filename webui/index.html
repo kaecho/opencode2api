@@ -48,6 +48,7 @@
           <div class="nav-group">
             <div class="nav-group-title" data-i18n="nav.group.integration">接入</div>
             <button class="nav-item" data-page="access" data-i18n="nav.access">接入指南</button>
+            <button class="nav-item" data-page="upstream-keys" data-i18n="nav.upstream-keys">上游 Key 池</button>
             <button class="nav-item" data-page="api-keys" data-i18n="nav.api-keys">API Key 管理</button>
           </div>
           <div class="nav-group">
@@ -483,6 +484,77 @@
                   流式请求会保持原协议事件；跨协议时由 Gateway 转换。
                 </li>
               </ul>
+            </section>
+          </section>
+
+          <section id="page-upstream-keys" class="page hidden">
+            <section class="section">
+              <div class="section-head">
+                <div>
+                  <h2 class="section-title" data-i18n="upstreamKeys.title">上游 Key 池</h2>
+                  <p class="section-caption" data-i18n="upstreamKeys.caption">
+                    这里管理调度用的 Zen / Go 上游 Key：冷却、连续失败和 Proxy 绑定。本地调用密钥在「API Key 管理」页面。
+                  </p>
+                </div>
+                <div class="key-actions">
+                  <select id="upstream-key-tier" aria-label="Tier">
+                    <option value="zen">Zen</option>
+                    <option value="go">Go</option>
+                    <option value="all" data-i18n="upstreamKeys.allTiers">全部</option>
+                  </select>
+                  <button id="upstream-key-refresh" class="btn btn-sm" data-i18n="upstreamKeys.refresh">
+                    刷新
+                  </button>
+                </div>
+              </div>
+              <div class="metrics">
+                <div class="metric">
+                  <div class="metric-label" data-i18n="upstreamKeys.total">当前显示</div>
+                  <div id="uk-total" class="metric-value">—</div>
+                  <div class="metric-note" data-i18n="upstreamKeys.totalNote">Zen / Go 上游 Key</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label" data-i18n="upstreamKeys.available">可用</div>
+                  <div id="uk-available" class="metric-value">—</div>
+                  <div class="metric-note" data-i18n="upstreamKeys.availableNote">不在冷却中</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label" data-i18n="upstreamKeys.cooling">冷却中</div>
+                  <div id="uk-cooling" class="metric-value">—</div>
+                  <div class="metric-note" data-i18n="upstreamKeys.coolingNote">到期自动恢复，也可手动重置</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label" data-i18n="upstreamKeys.proxies">可用 Proxy</div>
+                  <div id="uk-proxies" class="metric-value">—</div>
+                  <div class="metric-note" data-i18n="upstreamKeys.proxiesNote">健康且未封锁</div>
+                </div>
+              </div>
+            </section>
+            <section class="section">
+              <div class="section-head">
+                <div>
+                  <h2 class="section-title" data-i18n="upstreamKeys.table.title">调度队列</h2>
+                  <p class="section-caption" data-i18n="upstreamKeys.table.caption">
+                    429/失败后 Key 进入冷却，冷却期间不会被选中；重置只清除 Key 冷却，不解除 Proxy 封锁。
+                  </p>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="upstreamKeys.col.tail">Key 尾码</th>
+                      <th data-i18n="upstreamKeys.col.tier">Tier</th>
+                      <th data-i18n="upstreamKeys.col.state">状态</th>
+                      <th class="num" data-i18n="upstreamKeys.col.failures">连续失败</th>
+                      <th data-i18n="upstreamKeys.col.proxy">Proxy</th>
+                      <th data-i18n="upstreamKeys.col.cooldown">冷却截止</th>
+                      <th data-i18n="upstreamKeys.col.action">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="upstream-key-rows"></tbody>
+                </table>
+              </div>
             </section>
           </section>
 

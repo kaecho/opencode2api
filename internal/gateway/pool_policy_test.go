@@ -270,3 +270,25 @@ func TestAnonymousCursorSkipsDirectWhenProxyRequired(t *testing.T) {
 		}
 	}
 }
+
+func TestResetKeyCooldown(t *testing.T) {
+	proxy := testProxy(0, "http://proxy", false)
+	pool, err := nodePool([]string{"key-a"}, testTransports(proxy), time.Hour, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := pool.nodes[0]
+	node.failures.Store(4)
+	node.cooldownUntil.Store(time.Now().Add(time.Hour).UnixNano())
+	controller := &RuntimeController{}
+	controller.current.Store(&gatewayRuntime{gateway: &Gateway{zenNodes: pool}})
+	if !controller.ResetKeyCooldown(config.TierZen, config.Fingerprint(node.key)) {
+		t.Fatal("reset reported an unknown key")
+	}
+	if node.failures.Load() != 0 || node.cooldownUntil.Load() != 0 {
+		t.Fatalf("reset left failures=%d cooldown=%d", node.failures.Load(), node.cooldownUntil.Load())
+	}
+	if controller.ResetKeyCooldown(config.TierZen, "missing") {
+		t.Fatal("reset accepted an unknown key")
+	}
+}

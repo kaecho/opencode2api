@@ -481,6 +481,7 @@ type WarpStatus struct {
 // and any active cooldown.
 type KeyStatus struct {
 	ID            string     `json:"id"`
+	Fingerprint   string     `json:"fingerprint"`
 	Tier          string     `json:"tier"`
 	Index         int        `json:"index"`
 	ProxyIndex    int        `json:"proxy_index"`
@@ -627,6 +628,34 @@ func (m *RuntimeController) DebugKey(tier config.Tier, id string) *DebugKeyView 
 	return nil
 }
 
+// ResetKeyCooldown clears a key's failure streak and cooldown immediately.
+// It is an operator action, not part of routing; a missing runtime or key
+// reports false. The key remains bound to its current proxy.
+func (m *RuntimeController) ResetKeyCooldown(tier config.Tier, fingerprint string) bool {
+	runtime := m.current.Load()
+	if runtime == nil || runtime.gateway == nil {
+		return false
+	}
+	var nodes *upstreamNodes
+	switch tier {
+	case config.TierZen:
+		nodes = runtime.gateway.zenNodes
+	case config.TierGo:
+		nodes = runtime.gateway.goNodes
+	default:
+		return false
+	}
+	node := nodes.NodeByID(fingerprint)
+	if node == nil {
+		return false
+	}
+	nodes.MarkSuccess(node)
+	if m.logger != nil {
+		m.logger.Info("upstream key cooldown reset", "component", "admin", "event", "upstream_key_reset", "tier", tier, "key_id", config.KeyDisplayID(node.key))
+	}
+	return true
+}
+
 // DebugRouteForTier reports the route a diagnostic against one tier would take.
 func (m *RuntimeController) DebugRouteForTier(model string, tier config.Tier) (modelcatalog.RouteDiagnostic, error) {
 	runtime := m.current.Load()
@@ -651,7 +680,7 @@ func (m *RuntimeController) DebugRouteForTier(model string, tier config.Tier) (m
 func keyStatuses(tier string, pool *upstreamNodes) []KeyStatus {
 	result := make([]KeyStatus, 0, len(pool.nodes))
 	for _, node := range pool.nodes {
-		status := KeyStatus{ID: config.KeyDisplayID(node.key), Tier: tier, Index: node.index, ProxyIndex: int(node.proxyIndex.Load()), Failures: node.failures.Load()}
+		status := KeyStatus{ID: config.KeyDisplayID(node.key), Fingerprint: config.Fingerprint(node.key), Tier: tier, Index: node.index, ProxyIndex: int(node.proxyIndex.Load()), Failures: node.failures.Load()}
 		if until := node.cooldownUntil.Load(); until > time.Now().UnixNano() {
 			value := time.Unix(0, until).UTC()
 			status.CooldownUntil = &value
