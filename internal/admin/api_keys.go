@@ -42,7 +42,7 @@ func (a *Server) apiKeyViews(cfg config.Config) []APIKeyView {
 		meta := cfg.ServerKeyMetadata[id]
 		name := meta.Name
 		if name == "" {
-			name = fmt.Sprintf("已有 Key %d", i+1)
+			name = fmt.Sprintf("Existing key %d", i+1)
 		}
 		item := APIKeyView{
 			ID: id, Name: name, Display: config.MaskValue(key), Enabled: !meta.Disabled,
@@ -65,7 +65,7 @@ func (a *Server) handleListAPIKeys(w http.ResponseWriter, _ *http.Request) {
 // validateKeyName requires a name of 1-80 characters.
 func validateKeyName(name string) error {
 	if name == "" || len([]rune(name)) > 80 {
-		return errors.New("名称需为 1–80 个字符")
+		return errors.New("name must contain 1 to 80 characters")
 	}
 	return nil
 }
@@ -78,20 +78,20 @@ func addAPIKey(cfg *config.Config, name, key string) error {
 		return err
 	}
 	if len(key) < 16 || len(key) > 256 {
-		return errors.New("自定义 Key 需为 16–256 位")
+		return errors.New("custom key must contain 16 to 256 characters")
 	}
 	for _, ch := range key {
 		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.') {
-			return errors.New("Key 仅支持英文字母、数字、短横线、下划线和点")
+			return errors.New("key may contain only letters, digits, hyphen, underscore, and dot")
 		}
 	}
 	if len(cfg.ServerKeys) >= 200 {
-		return errors.New("最多创建 200 个 API Key")
+		return errors.New("at most 200 API keys may be configured")
 	}
 	id := config.Fingerprint(key)
 	for _, existing := range cfg.ServerKeys {
 		if config.Fingerprint(existing) == id {
-			return errors.New("此 API Key 已存在")
+			return errors.New("this API key already exists")
 		}
 	}
 	if cfg.ServerKeyMetadata == nil {
@@ -118,7 +118,7 @@ func (a *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		var random [24]byte
 		if _, err := rand.Read(random[:]); err != nil {
-			writeAdminError(w, 500, "generation_failed", "无法生成密钥")
+			writeAdminError(w, 500, "generation_failed", "could not generate a key")
 			return
 		}
 		key = "sk-local-" + hex.EncodeToString(random[:])
@@ -144,7 +144,7 @@ func changeAPIKey(cfg *config.Config, id string, name *string, enabled *bool, re
 		}
 	}
 	if index < 0 {
-		return errors.New("API Key 不存在，请刷新列表")
+		return errors.New("API key not found; refresh the list")
 	}
 	if cfg.ServerKeyMetadata == nil {
 		cfg.ServerKeyMetadata = map[string]config.ServerKeyMetadata{}
@@ -167,7 +167,7 @@ func changeAPIKey(cfg *config.Config, id string, name *string, enabled *bool, re
 		cfg.ServerKeyMetadata[id] = meta
 	}
 	if cfg.FirstEnabledServerKey() == "" {
-		return errors.New("至少保留一个启用的 API Key，请先创建替代密钥")
+		return errors.New("at least one enabled API key must remain; create a replacement first")
 	}
 	return nil
 }

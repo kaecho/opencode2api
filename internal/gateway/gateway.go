@@ -63,9 +63,13 @@ const statusClientClosedRequest = 499
 // bodies are never relayed: they contain provider-specific subscription and
 // abuse text that does not help a gateway caller.
 const (
-	proxyUnavailableMessage  = "当前服务不可用"
-	upstreamForbiddenMessage = "暂时不可用"
-	upstreamRateLimitMessage = "当前 rate limit"
+	proxyUnavailableMessage  = "Service unavailable"
+	upstreamForbiddenMessage = "Temporarily unavailable"
+	upstreamRateLimitMessage = "Rate limit exceeded"
+
+	errorTypeServiceUnavailable = "service_unavailable"
+	errorTypePermissionDenied   = "permission_denied"
+	errorTypeRateLimit          = "rate_limit_error"
 )
 
 // Gateway serves the local inference API for one configuration. It owns the
@@ -355,7 +359,7 @@ func (g *Gateway) handleInference(external wire.Protocol) http.HandlerFunc {
 			// route failed; report that instead of blaming the upstream with
 			// a 502.
 			if errors.Is(err, errProxyUnavailable) {
-				wire.WriteError(w, external, http.StatusServiceUnavailable, proxyUnavailableMessage, "proxy_error", ids.Request)
+				wire.WriteError(w, external, http.StatusServiceUnavailable, proxyUnavailableMessage, errorTypeServiceUnavailable, ids.Request)
 				return
 			}
 			if errors.Is(err, errWARPUnavailable) {
@@ -373,14 +377,14 @@ func (g *Gateway) handleInference(external wire.Protocol) http.HandlerFunc {
 			// the client to retry into the same penalty, so answer with the
 			// block itself.
 			if errors.Is(err, errFreeTierIPBlocked) {
-				wire.WriteError(w, external, http.StatusForbidden, upstreamForbiddenMessage, "temporarily_unavailable", ids.Request)
+				wire.WriteError(w, external, http.StatusForbidden, upstreamForbiddenMessage, errorTypePermissionDenied, ids.Request)
 				return
 			}
 			// The anonymous lane's circuit breaker is open. Report the pause
 			// distinctly so the operator does not look for a credential or a
 			// model problem in the upstream error.
 			if errors.Is(err, errAnonymousLanePaused) {
-				wire.WriteError(w, external, http.StatusServiceUnavailable, anonymousLanePausedMessage, "free_tier_lane_paused", ids.Request)
+				wire.WriteError(w, external, http.StatusServiceUnavailable, proxyUnavailableMessage, errorTypeServiceUnavailable, ids.Request)
 				return
 			}
 			wire.WriteError(w, external, http.StatusBadGateway, "all upstream attempts failed", "upstream_error", ids.Request)
@@ -553,7 +557,7 @@ func (g *Gateway) forwardSystemOne(w http.ResponseWriter, r *http.Request, body 
 			return
 		}
 		if errors.Is(err, errProxyUnavailable) {
-			wire.WriteError(w, wire.SystemOne, http.StatusServiceUnavailable, proxyUnavailableMessage, "proxy_error", ids.Request)
+			wire.WriteError(w, wire.SystemOne, http.StatusServiceUnavailable, proxyUnavailableMessage, errorTypeServiceUnavailable, ids.Request)
 			return
 		}
 		if errors.Is(err, errWARPUnavailable) {
@@ -667,7 +671,7 @@ func writeKeysCoolingError(w http.ResponseWriter, protocol wire.Protocol, err er
 			w.Header().Set("Retry-After", strconv.Itoa(seconds))
 		}
 	}
-	wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, "rate_limited", requestID)
+	wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, errorTypeRateLimit, requestID)
 	return true
 }
 
@@ -679,10 +683,10 @@ func writeKeysCoolingError(w http.ResponseWriter, protocol wire.Protocol, err er
 func copyErrorResponse(w http.ResponseWriter, protocol wire.Protocol, resp *http.Response, requestID string) {
 	switch resp.StatusCode {
 	case http.StatusForbidden:
-		wire.WriteError(w, protocol, http.StatusForbidden, upstreamForbiddenMessage, "temporarily_unavailable", requestID)
+		wire.WriteError(w, protocol, http.StatusForbidden, upstreamForbiddenMessage, errorTypePermissionDenied, requestID)
 		return
 	case http.StatusTooManyRequests:
-		wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, "rate_limited", requestID)
+		wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, errorTypeRateLimit, requestID)
 		return
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))

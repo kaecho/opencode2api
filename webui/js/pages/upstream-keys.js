@@ -1,9 +1,9 @@
 // Page: 上游 Key 池 — Zen / Go 上游 Key 的调度状态、冷却重置和 Proxy 绑定。
 import { api } from "../api.js";
-import { refreshMonitor } from "../data.js";
+import { loadConfig, refreshMonitor } from "../data.js";
 import { t, onChange } from "../i18n.js";
 import * as store from "../store.js";
-import { $, el, emptyRow, localTime, toast } from "../ui.js";
+import { $, confirmDialog, el, emptyRow, localTime, toast } from "../ui.js";
 
 function visibleKeys() {
   const tier = $("#upstream-key-tier")?.value || "zen";
@@ -53,6 +53,34 @@ function render() {
         reset.disabled = !key.cooldown_until;
       }
     });
+    const remove = el("button", {
+      type: "button",
+      class: "btn btn-sm btn-ghost",
+      text: t("删除", "upstreamKeys.delete"),
+    });
+    remove.addEventListener("click", async () => {
+      if (
+        !(await confirmDialog({
+          title: t("删除上游 Key", "upstreamKeys.deleteTitle"),
+          message: t(`将从 ${key.tier} 号池移除尾码 ${key.id}，确定吗？`, "upstreamKeys.deleteConfirm", key.tier, key.id),
+          confirmLabel: t("删除", "upstreamKeys.delete"),
+          danger: true,
+        }))
+      ) {
+        return;
+      }
+      remove.disabled = true;
+      try {
+        await api(`/api/upstream-keys/${encodeURIComponent(key.tier)}/${encodeURIComponent(key.fingerprint)}`, {
+          method: "DELETE",
+        });
+        await Promise.all([refreshMonitor(), loadConfig()]);
+        toast(t("Key 已删除", "toast.upstreamKey.deleted"));
+      } catch (error) {
+        toast(error.message, true);
+        remove.disabled = false;
+      }
+    });
     host.append(
       el("tr", {}, [
         el("td", { class: "mono", text: key.id }),
@@ -66,7 +94,7 @@ function render() {
         el("td", { class: "num", text: String(key.failures || 0) }),
         el("td", { class: "mono", text: proxyText }),
         el("td", { class: "mono", text: key.cooldown_until ? localTime(key.cooldown_until) : "—" }),
-        el("td", {}, [reset]),
+        el("td", {}, [el("div", { class: "key-actions" }, [reset, remove])]),
       ]),
     );
   }
@@ -92,6 +120,32 @@ async function refresh() {
   }
 }
 
+async function add(event) {
+  event.preventDefault();
+  const tier = $("#upstream-key-add-tier").value;
+  const input = $("#upstream-key-new");
+  const key = input.value.trim();
+  if (!key) {
+    toast(t("请填写上游 Key", "upstreamKeys.add.empty"), true);
+    return;
+  }
+  const button = $("#upstream-key-add");
+  button.disabled = true;
+  try {
+    await api(`/api/upstream-keys/${encodeURIComponent(tier)}`, {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    });
+    input.value = "";
+    await Promise.all([refreshMonitor(), loadConfig()]);
+    toast(t("上游 Key 已添加", "toast.upstreamKey.added"));
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 export default {
   id: "upstream-keys",
   title: "上游 Key 池",
@@ -99,6 +153,7 @@ export default {
   init() {
     $("#upstream-key-tier").addEventListener("change", render);
     $("#upstream-key-refresh").addEventListener("click", refresh);
+    $("#upstream-key-form").addEventListener("submit", add);
     store.on("monitor", render);
     onChange(render);
   },

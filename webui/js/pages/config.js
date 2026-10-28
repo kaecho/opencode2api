@@ -1,9 +1,9 @@
-// Page: 配置中心 — masked config editing with validation, hot reload and reveal.
+// Page: 配置中心 — masked config editing with validation and hot reload.
 import { api } from "../api.js";
 import { loadConfig, loadDebugModels } from "../data.js";
 import * as store from "../store.js";
 import { t, onChange } from "../i18n.js";
-import { $, $$, bindTabs, el, openDialog, toast } from "../ui.js";
+import { $, $$, bindTabs, el, toast } from "../ui.js";
 
 function renderChips(name) {
   const host = $(`#${name}-chips`);
@@ -83,7 +83,7 @@ function fillConfig(value) {
   $("#c-level").value = value.logging.level;
   $("#c-ring").value = value.logging.ring_size;
   $("#c-dump-bodies").checked = !!value.logging.dump_request_bodies;
-  ["server_keys", "zen_keys", "go_keys", "proxies"].forEach(renderChips);
+  renderChips("proxies");
   renderRestartNotice(value);
 }
 
@@ -94,9 +94,9 @@ async function save(event) {
   try {
     const update = {
       listen: $("#c-listen").value,
-      server_keys: secretInputs("server_keys"),
-      zen_keys: secretInputs("zen_keys"),
-      go_keys: secretInputs("go_keys"),
+      server_keys: (current.server_keys || []).map((item) => ({ id: item.id })),
+      zen_keys: (current.zen_keys || []).map((item) => ({ id: item.id })),
+      go_keys: (current.go_keys || []).map((item) => ({ id: item.id })),
       anonymous: $("#c-anonymous").checked,
       warp: {
         enabled: $("#c-warp-enabled").checked,
@@ -145,9 +145,7 @@ async function save(event) {
     };
     const result = await api("/api/config", { method: "PUT", body: JSON.stringify(update) });
     store.set("config", result.config);
-    ["server_keys", "zen_keys", "go_keys", "proxies"].forEach(
-      (name) => ($(`#${name}-new`).value = ""),
-    );
+    $("#proxies-new").value = "";
     await loadDebugModels();
     toast(
       result.result.restart_required
@@ -178,43 +176,7 @@ async function reload() {
   }
 }
 
-function reveal() {
-  const input = el("input", { type: "password", autocomplete: "current-password" });
-  const submit = async (close) => {
-    try {
-      const values = await api("/api/config/reveal", {
-        method: "POST",
-        body: JSON.stringify({ password: input.value }),
-      });
-      close();
-      openDialog({
-        title: t("敏感配置", "modal.title"),
-        size: "dialog-lg",
-        body: el("pre", { text: JSON.stringify(values, null, 2) }),
-        actions: [{ label: t("关闭", "modal.close") }],
-      });
-    } catch (error) {
-      toast(error.message, true);
-    }
-  };
-  const dialog = openDialog({
-    title: t("查看敏感配置", "modal.revealTitle"),
-    body: el("div", { class: "field" }, [
-      el("label", { text: t("请再次输入管理密码", "config.revealPrompt") }),
-      input,
-    ]),
-    actions: [
-      { label: t("取消", "common.cancel") },
-      { label: t("查看", "common.view"), kind: "btn-primary", onClick: submit },
-    ],
-  });
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submit(dialog.close);
-    }
-  });
-}
+
 
 export default {
   id: "config",
@@ -225,7 +187,6 @@ export default {
     bindTabs($("#page-config"));
     $("#config-form").addEventListener("submit", save);
     $("#reload-config").addEventListener("click", reload);
-    $("#reveal").addEventListener("click", reveal);
     onChange(() => {
       const value = store.get("config");
       if (value) renderRestartNotice(value);

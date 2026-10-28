@@ -124,8 +124,8 @@ func TestCopyErrorResponseRewritesUpstreamBodies(t *testing.T) {
 		status  int
 		message string
 	}{
-		{http.StatusForbidden, "暂时不可用"},
-		{http.StatusTooManyRequests, "当前 rate limit"},
+		{http.StatusForbidden, "Temporarily unavailable"},
+		{http.StatusTooManyRequests, "Rate limit exceeded"},
 	} {
 		rec := httptest.NewRecorder()
 		resp := &http.Response{
@@ -155,7 +155,7 @@ func TestWriteKeysCoolingError(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want 429", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "当前 rate limit") {
+	if !strings.Contains(rec.Body.String(), "Rate limit exceeded") {
 		t.Fatalf("body %q misses the local rate-limit message", rec.Body.String())
 	}
 	if rec.Header().Get("Retry-After") == "" {

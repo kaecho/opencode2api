@@ -292,7 +292,7 @@ Key 初始化时均衡分配到代理。真实流量可以触发代理检查、K
 
 网关自行生成的会话与项目标识按调用方的服务端 Key 隔离，不同 Key 不会共享上游会话、首选 Key 或匿名代理；客户端自带的官方 OpenCode 会话（`ses_…`）原样保留。没有显式会话 ID 时，使用系统提示词和第一条用户消息生成会话标识，因此同一 Key 下系统提示词和开场内容都相同的会话仍可能共享亲和性。需要互相隔离的用户应各自使用独立的服务端 Key。调整 Key 或代理池成员后，原有会话选择的节点可能变化。
 
-失败冷却按指数增长，最高为 `performance.failure_cooldown_seconds` 的八倍；如果上游的 `Retry-After` 更长，则使用更长时间。冷却中的 Key 会被跳过，到时间后自动恢复；如果所有可用 Key 都在冷却，请求直接返回 429，不再轮询整个 Key 池。 WebUI 的「上游 Key 池」页面列出 Zen / Go Key 的冷却、连续失败和 Proxy 绑定，并可手动重置单个 Key 的冷却；本地调用密钥仍在「API Key 管理」页面。 上游 403/429 的原始响应体不会透传：客户端只会收到本地的 403 `暂时不可用` 或 429 `当前 rate limit`。仍在冷却的匿名节点同样会被跳过。一个代理连续收到配置数量的 429/403 后，会在 `performance.proxy_block_seconds` 内同时移出 Key 池和匿名池；开启 `performance.require_proxy` 后，没有可用代理时返回 503，不回退 `direct`。
+失败冷却按指数增长，最高为 `performance.failure_cooldown_seconds` 的八倍；如果上游的 `Retry-After` 更长，则使用更长时间。冷却中的 Key 会被跳过，到时间后自动恢复；如果所有可用 Key 都在冷却，请求直接返回 429，不再轮询整个 Key 池。 WebUI 的「上游 Key 池」页面列出 Zen / Go Key 的冷却、连续失败和 Proxy 绑定，并提供新增、删除和重置冷却操作；本地调用密钥仍在「API Key 管理」页面。 上游 403/429 的原始响应体不会透传：客户端只会收到本地的 403 `Temporarily unavailable` 或 429 `Rate limit exceeded`。仍在冷却的匿名节点同样会被跳过。一个代理连续收到配置数量的 429/403 后，会在 `performance.proxy_block_seconds` 内同时移出 Key 池和匿名池；开启 `performance.require_proxy` 后，没有可用代理时返回 503，不回退 `direct`。
 
 ## 配置参考
 

@@ -123,7 +123,7 @@ func RotationStream(ctx context.Context, w http.ResponseWriter, reader io.Reader
 	}
 	var writeErr *ClientWriteError
 	if committed && ctx.Err() == nil && !errors.As(readErr, &writeErr) {
-		_ = emit(bridgeStreamEvent{Kind: "error", Error: "当前上游模型的输出中断；本次响应已结束，请重新发起请求。", ErrorType: "upstream_error"})
+		_ = emit(bridgeStreamEvent{Kind: "error", Error: "The upstream model stream was interrupted; this response has ended. Start a new request.", ErrorType: "upstream_error"})
 	}
 	return usage, reported, committed, readErr
 }

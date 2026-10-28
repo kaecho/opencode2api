@@ -533,6 +533,41 @@
             <section class="section">
               <div class="section-head">
                 <div>
+                  <h2 class="section-title" data-i18n="upstreamKeys.add.title">添加上游 Key</h2>
+                  <p class="section-caption" data-i18n="upstreamKeys.add.caption">
+                    直接添加到 Zen 或 Go 号池；保存后立即生效，不需要去配置中心。
+                  </p>
+                </div>
+              </div>
+              <form id="upstream-key-form" class="form-grid">
+                <div class="field">
+                  <label for="upstream-key-add-tier" data-i18n="upstreamKeys.add.tier">Tier</label>
+                  <select id="upstream-key-add-tier">
+                    <option value="zen">Zen</option>
+                    <option value="go">Go</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label for="upstream-key-new" data-i18n="upstreamKeys.add.key">Key</label>
+                  <input
+                    id="upstream-key-new"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="oc_sk_..."
+                    data-i18n-attr="placeholder:upstreamKeys.add.placeholder"
+                  />
+                </div>
+                <div class="field">
+                  <button id="upstream-key-add" type="submit" class="btn btn-primary" data-i18n="upstreamKeys.add.submit">
+                    添加
+                  </button>
+                </div>
+              </form>
+            </section>
+            <section class="section">
+              <div class="section-head">
+                <div>
                   <h2 class="section-title" data-i18n="upstreamKeys.table.title">调度队列</h2>
                   <p class="section-caption" data-i18n="upstreamKeys.table.caption">
                     429/失败后 Key 进入冷却，冷却期间不会被选中；重置只清除 Key 冷却，不解除 Proxy 封锁。
@@ -822,7 +857,7 @@
             <form id="config-form" class="stack">
               <div class="tabs" role="tablist" aria-label="配置分区">
                 <button class="tab active" data-tab="service" role="tab" aria-selected="true" data-i18n="config.tab.service">服务</button>
-                <button class="tab" data-tab="keys" role="tab" aria-selected="false" data-i18n="config.tab.keys">密钥与匿名</button>
+                <button class="tab" data-tab="keys" role="tab" aria-selected="false" data-i18n="config.tab.keys">匿名通道</button>
                 <button class="tab" data-tab="proxies" role="tab" aria-selected="false" data-i18n="config.tab.proxies">代理</button>
                 <button class="tab" data-tab="upstream" role="tab" aria-selected="false" data-i18n="config.tab.upstream">上游与模型</button>
                 <button class="tab" data-tab="reasoning" role="tab" aria-selected="false" data-i18n="config.tab.reasoning">推理与性能</button>
@@ -864,14 +899,11 @@
                 <section class="section">
                   <div class="section-head">
                     <div>
-                      <h2 class="section-title" data-i18n="config.secrets.title">密钥与匿名</h2>
+                      <h2 class="section-title" data-i18n="config.secrets.title">匿名通道</h2>
                       <p class="section-caption" data-i18n="config.secrets.caption">
-                        敏感值默认仅显示掩码；移除后保存才会生效。
+                        Zen / Go 上游 Key 在「上游 Key 池」页面管理，本地调用密钥在「API Key 管理」页面管理。
                       </p>
                     </div>
-                    <button id="reveal" type="button" class="btn btn-sm" data-i18n="config.secrets.reveal">
-                      二次验证查看
-                    </button>
                   </div>
                   <div class="form-grid">
                     <div class="field full">
@@ -879,33 +911,6 @@
                         <input id="c-anonymous" type="checkbox" />
                         <span data-i18n="config.secrets.anonymous">启用 Zen 匿名通道</span>
                       </label>
-                    </div>
-                    <div class="field full">
-                      <label for="server_keys-new">Server Keys</label>
-                      <div id="server_keys-chips" class="chips"></div>
-                      <textarea
-                        id="server_keys-new"
-                        placeholder="每行新增一个 key"
-                        data-i18n-attr="placeholder:config.secrets.add"
-                      ></textarea>
-                    </div>
-                    <div class="field">
-                      <label for="zen_keys-new">Zen Keys</label>
-                      <div id="zen_keys-chips" class="chips"></div>
-                      <textarea
-                        id="zen_keys-new"
-                        placeholder="每行新增一个 key"
-                        data-i18n-attr="placeholder:config.secrets.add"
-                      ></textarea>
-                    </div>
-                    <div class="field">
-                      <label for="go_keys-new">Go Keys</label>
-                      <div id="go_keys-chips" class="chips"></div>
-                      <textarea
-                        id="go_keys-new"
-                        placeholder="每行新增一个 key"
-                        data-i18n-attr="placeholder:config.secrets.add"
-                      ></textarea>
                     </div>
                   </div>
                 </section>

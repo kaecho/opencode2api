@@ -183,10 +183,10 @@ func (g *Gateway) handleRotation(w http.ResponseWriter, r *http.Request, externa
 		return
 	}
 	status := http.StatusServiceUnavailable
-	message := "该分组暂无可用模型（已暂停、下架、额度不足或重试次数已用尽），请稍后重试"
+	message := "No model is currently available for this rotation group (paused, removed, out of quota, or retries exhausted). Try again later."
 	if ctx.Err() != nil {
 		status = http.StatusGatewayTimeout
-		message = "分组请求整体超时"
+		message = "The rotation group request timed out."
 	}
 	wire.WriteError(w, external, status, message, "rotation_unavailable", ids.Request)
 }
