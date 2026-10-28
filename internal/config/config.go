@@ -248,6 +248,16 @@ type PerformanceConfig struct {
 	// abusive stays out of the anonymous cursor. Upstream does not publish
 	// the block duration, so the default is a conservative 15 minutes.
 	FreeTierBlockSeconds int `json:"free_tier_block_seconds"`
+	// ProxyBlockThreshold is the number of consecutive 429 or 403 responses
+	// from one proxy that blocks it. Zero disables proxy blocking.
+	ProxyBlockThreshold int `json:"proxy_block_threshold"`
+	// ProxyBlockSeconds is how long a proxy blocked by consecutive 429/403
+	// responses stays out of both the key and anonymous pools. Zero uses the
+	// built-in default.
+	ProxyBlockSeconds int `json:"proxy_block_seconds"`
+	// RequireProxy refuses to fall back to "direct" and returns 503 when no
+	// usable proxy is available.
+	RequireProxy bool `json:"require_proxy"`
 }
 
 // AttemptTimeout returns the bound for a single upstream attempt. When
@@ -295,7 +305,7 @@ func Load(path string) (Config, error) {
 		Upstream:    UpstreamConfig{Zen: "https://opencode.ai/zen", Go: "https://opencode.ai/zen/go", Anonymous: "https://opencode.ai/inference"},
 		Retry:       RetryConfig{MaxAttempts: 3, TimeoutSeconds: 300},
 		Models:      ModelsConfig{RefreshSeconds: 300, Protocols: map[string]string{}},
-		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15},
+		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15, ProxyBlockThreshold: 3, ProxyBlockSeconds: 900},
 		Logging:     LoggingConfig{Level: "info", RingSize: 2000},
 		WebUI:       WebUIConfig{Listen: "0.0.0.0:8081", SessionTTLMinutes: 720},
 		Prefer:      TierGo,
@@ -384,6 +394,12 @@ func Normalize(path string, cfg Config) (Config, error) {
 	}
 	if cfg.Performance.FreeTierBlockSeconds < 0 {
 		return Config{}, errors.New("performance.free_tier_block_seconds must not be negative (0 uses the built-in cool-down)")
+	}
+	if cfg.Performance.ProxyBlockThreshold < 0 {
+		return Config{}, errors.New("performance.proxy_block_threshold must not be negative (0 disables proxy blocking)")
+	}
+	if cfg.Performance.ProxyBlockSeconds < 0 {
+		return Config{}, errors.New("performance.proxy_block_seconds must not be negative (0 uses the built-in block duration)")
 	}
 	if cfg.Logging.Level != "debug" && cfg.Logging.Level != "info" && cfg.Logging.Level != "warn" && cfg.Logging.Level != "error" {
 		return Config{}, errors.New("logging.level must be debug, info, warn, or error")

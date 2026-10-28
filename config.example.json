@@ -36,7 +36,10 @@
     "attempt_timeout_seconds": 0,
     "first_event_timeout_seconds": 0,
     "max_anonymous_exits": 8,
-    "free_tier_block_seconds": 900
+    "free_tier_block_seconds": 900,
+    "proxy_block_threshold": 3,
+    "proxy_block_seconds": 900,
+    "require_proxy": false
   },
   "logging": {
     "level": "info",

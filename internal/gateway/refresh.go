@@ -15,6 +15,10 @@ const (
 	proxyHealthCheckURL      = "https://cloudflare.com/cdn-cgi/trace"
 	proxyHealthCheckInterval = 15 * time.Minute
 	proxyHealthCheckTimeout  = 10 * time.Second
+	// defaultProxyBlockDuration keeps a proxy out of both pools after the
+	// configured number of consecutive 429/403 responses. The upstream quota
+	// reset is usually longer, but a block should not require a restart.
+	defaultProxyBlockDuration = 15 * time.Minute
 )
 
 // syncProxyResult updates proxy health from real traffic and reports whether
@@ -27,12 +31,18 @@ const (
 // an HTTP response only start the background check, which never affects the
 // return value.
 func (g *Gateway) syncProxyResult(ctx context.Context, proxy *proxyTransport, status int, err error) bool {
-	if proxy == nil || proxy.pool {
+	if proxy == nil {
+		return false
+	}
+	if status > 0 {
+		g.observeProxyStatus(proxy, status)
+	}
+	if proxy.pool {
 		return false
 	}
 	if status > 0 {
 		wasHealthy := proxy.healthy.Swap(true)
-		if !wasHealthy {
+		if !wasHealthy && status != http.StatusForbidden && status != http.StatusTooManyRequests {
 			g.restoreProxy(proxy)
 		}
 		return false
@@ -47,6 +57,46 @@ func (g *Gateway) syncProxyResult(ctx context.Context, proxy *proxyTransport, st
 		return false
 	}
 	return false
+}
+
+// observeProxyStatus advances the per-proxy consecutive 429/403 counter and
+// blocks the proxy for the configured duration once the threshold is reached.
+// Any other HTTP response clears the streak. Direct egress is never blocked:
+// it has no alternate route and the key cooldown already handles the outcome.
+func (g *Gateway) observeProxyStatus(proxy *proxyTransport, status int) {
+	if proxy == nil || proxy.direct {
+		return
+	}
+	threshold := g.proxyBlockThreshold
+	if threshold < 1 {
+		return
+	}
+	switch status {
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		failures := proxy.rateFailures.Add(1)
+		if failures < uint32(threshold) {
+			return
+		}
+		until := time.Now().Add(g.proxyBlockTTL())
+		proxy.rateBlockedUntil.Store(until.UnixNano())
+		proxy.rateFailures.Store(0)
+		if g.logger != nil {
+			g.logger.Warn("proxy blocked after consecutive 429/403 responses",
+				"component", "proxy", "event", "proxy_rate_blocked", "proxy", config.RedactURL(proxy.name),
+				"status", status, "threshold", threshold, "blocked_until", until.UTC())
+		}
+	default:
+		proxy.rateFailures.Store(0)
+	}
+}
+
+// proxyBlockTTL returns the configured proxy block duration, or the built-in
+// default when the operator left it unset.
+func (g *Gateway) proxyBlockTTL() time.Duration {
+	if g != nil && g.proxyBlockDuration > 0 {
+		return g.proxyBlockDuration
+	}
+	return defaultProxyBlockDuration
 }
 
 // verifyProxyAfterError starts a background health check of proxy, unless one

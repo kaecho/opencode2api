@@ -17,12 +17,6 @@ import (
 // and the exit must stay out of the cursor until the block expires.
 var errFreeTierIPBlocked = errors.New("free tier blocked the egress IP")
 
-// freeTierBlockedMessage is what a client receives while its exit is blocked.
-// The upstream message tells people to turn off a VPN, which is wrong for a
-// server that egresses through a proxy; this one names the real cause and the
-// two ways out.
-const freeTierBlockedMessage = "OpenCode is blocking free-model traffic from the IP this gateway leaves from, so retrying now cannot succeed. Route the request through another exit or wait for the block to expire."
-
 // errAnonymousLanePaused reports that the anonymous lane's circuit breaker has
 // paused the whole lane. Unlike an upstream rejection, another exit or a retry
 // cannot succeed while the lane is paused; the caller should use an
@@ -98,6 +92,20 @@ func peekNetworkAbuseBlock(resp *http.Response) bool {
 		return false
 	}
 	return isNetworkAbuseBlock(resp.StatusCode, peekResponseBody(resp))
+}
+
+// keysCoolingError reports that every eligible upstream key is in its
+// post-429/error cooldown. No request was sent, so the caller can answer with
+// a local 429 and the earliest reactivation time instead of walking the pool.
+type keysCoolingError struct {
+	until time.Time
+}
+
+func (e *keysCoolingError) Error() string {
+	if e == nil || e.until.IsZero() {
+		return "all upstream keys are cooling down"
+	}
+	return "all upstream keys are cooling until " + e.until.UTC().Format(time.RFC3339)
 }
 
 // errDeterministicClientRejection reports that the upstream rejected the

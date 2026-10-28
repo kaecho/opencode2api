@@ -68,7 +68,7 @@ type healthWarp struct {
 // starting.
 func (g *Gateway) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	_, models := g.availableModels()
-	proxyTotal, proxyHealthy := g.transports.healthCounts()
+	proxyTotal, proxyHealthy := g.transports.healthCounts(g.cfg.Performance.RequireProxy)
 	zenKeys, goKeys := g.zenNodes.Len(), g.goNodes.Len()
 	staleAfter := max(2*time.Duration(g.cfg.Models.RefreshSeconds)*time.Second, time.Minute)
 	var warpStatus *healthWarp

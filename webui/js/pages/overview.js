@@ -63,17 +63,23 @@ function renderResources(resources) {
   const proxies = $("#proxy-table");
   proxies.replaceChildren();
   (resources.proxies || []).forEach((proxy) => {
+    const blocked = !!proxy.blocked_until;
+    const state = blocked
+      ? `${t("封禁中", "state.blocked")} ${timeOnly(new Date(proxy.blocked_until))}`
+      : proxy.healthy
+        ? t("正常", "state.healthy")
+        : t("不可用", "state.unavailable");
     proxies.append(
       el("tr", {}, [
         el("td", { text: proxy.address }),
         el("td", {
-          class: `status ${proxy.healthy ? "ok" : "bad"}`,
-          text: proxy.healthy ? t("正常", "state.healthy") : t("不可用", "state.unavailable"),
+          class: `status ${blocked ? "warn" : proxy.healthy ? "ok" : "bad"}`,
+          text: state,
         }),
         el("td", {
           text: `Z ${proxy.zen_keys} · G ${proxy.go_keys} · A ${
             proxy.anonymous ? t("开", "common.on") : t("关", "common.off")
-          }`,
+          }${proxy.rate_failures ? ` · 连续 ${proxy.rate_failures}` : ""}`,
         }),
       ]),
     );
@@ -108,13 +114,16 @@ function renderResources(resources) {
     );
   }
   (resources.keys || []).forEach((key) => {
+    const cooling = !!key.cooldown_until;
     keys.append(
       el("tr", {}, [
         el("td", { text: key.id }),
         el("td", { text: key.tier }),
         el("td", {
-          class: `status ${key.cooldown_until ? "warn" : "ok"}`,
-          text: key.cooldown_until ? t("冷却中", "state.cooling") : t("可用", "state.available"),
+          class: `status ${cooling ? "warn" : "ok"}`,
+          text: cooling
+            ? `${t("冷却中", "state.cooling")} ${timeOnly(new Date(key.cooldown_until))}`
+            : t("可用", "state.available"),
         }),
       ]),
     );

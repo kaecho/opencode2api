@@ -493,13 +493,16 @@ type KeyStatus struct {
 // to it. Anonymous reports whether the anonymous lane, which uses every
 // proxy, is enabled.
 type ProxyStatus struct {
-	Index     int    `json:"index"`
-	Address   string `json:"address"`
-	Healthy   bool   `json:"healthy"`
-	Checking  bool   `json:"checking"`
-	ZenKeys   int    `json:"zen_keys"`
-	GoKeys    int    `json:"go_keys"`
-	Anonymous bool   `json:"anonymous"`
+	Index        int        `json:"index"`
+	Address      string     `json:"address"`
+	Healthy      bool       `json:"healthy"`
+	Checking     bool       `json:"checking"`
+	Direct       bool       `json:"direct"`
+	RateFailures uint32     `json:"rate_failures"`
+	BlockedUntil *time.Time `json:"blocked_until,omitempty"`
+	ZenKeys      int        `json:"zen_keys"`
+	GoKeys       int        `json:"go_keys"`
+	Anonymous    bool       `json:"anonymous"`
 }
 
 // Resources reports the current runtime's servable models, per-key state and
@@ -523,7 +526,11 @@ func (m *RuntimeController) Resources() ResourceSnapshot {
 	goBindings := append([]int(nil), gateway.goNodes.bindingCount...)
 	gateway.goNodes.bindingsMu.Unlock()
 	for _, proxy := range gateway.transports.items {
-		status := ProxyStatus{Index: proxy.index, Address: config.RedactURL(proxy.name), Healthy: proxy.healthy.Load(), Checking: proxy.checking.Load(), Anonymous: gateway.cfg.Anonymous}
+		status := ProxyStatus{Index: proxy.index, Address: config.RedactURL(proxy.name), Healthy: proxy.healthy.Load(), Checking: proxy.checking.Load(), Direct: proxy.direct, RateFailures: proxy.rateFailures.Load(), Anonymous: gateway.cfg.Anonymous}
+		if until := proxy.rateBlockedUntil.Load(); until > time.Now().UnixNano() {
+			value := time.Unix(0, until).UTC()
+			status.BlockedUntil = &value
+		}
 		if proxy.index < len(zenBindings) {
 			status.ZenKeys = zenBindings[proxy.index]
 		}

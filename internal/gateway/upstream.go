@@ -366,6 +366,12 @@ func (g *Gateway) doAnonymousUpstream(ctx context.Context, route models.Route, b
 		return nil, errAnonymousLanePaused, 0
 	}
 	defer g.anonymous.ReleaseProbe()
+	if !g.anonymous.hasUsableExit(time.Now()) {
+		if g.anonymous.blockedExits(time.Now()) {
+			return nil, errFreeTierIPBlocked, 0
+		}
+		return nil, errProxyUnavailable, 0
+	}
 	var lastResponse *http.Response
 	var lastErr error
 	// blocked records that some exit is under the free tier's IP block. The
@@ -843,8 +849,8 @@ func (g *Gateway) doSelectedKeyUpstream(ctx context.Context, route models.Route,
 	useWARP := g.usesWARP(route.ID, override.Tier, false)
 	proxy := nodes.Proxy(node)
 	if !useWARP {
-		if proxy == nil {
-			return nil, errors.New("selected upstream key has no proxy binding"), 0
+		if proxy == nil || !proxy.available(time.Now(), g.cfg.Performance.RequireProxy) {
+			return nil, errProxyUnavailable, 0
 		}
 	}
 	if meta := telemetry.MetaFromContext(ctx); meta != nil {
@@ -924,6 +930,9 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 	}
 	setRequestShape(ctx, changed, toolRenames)
 	useWARP := g.usesWARP(route.ID, route.Tier, false)
+	if !useWARP && !nodes.hasUsableKeyedProxy(time.Now()) {
+		return nil, errProxyUnavailable, 0
+	}
 	for attempts < g.cfg.Retry.MaxAttempts {
 		if ctx.Err() != nil {
 			// Same guard as the anonymous loop: an exhausted request budget
@@ -935,6 +944,19 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 		}
 		node := cursor.Next()
 		if node == nil {
+			if lastResponse == nil {
+				if !useWARP {
+					if !nodes.hasUsableKeyedProxy(time.Now()) {
+						lastErr = errProxyUnavailable
+					} else if until := nodes.earliestCooldown(time.Now()); !until.IsZero() {
+						lastErr = &keysCoolingError{until: until}
+					} else {
+						lastErr = errors.New("no usable upstream key")
+					}
+				} else {
+					lastErr = errors.New("no usable upstream key")
+				}
+			}
 			break
 		}
 		attempts++

@@ -292,7 +292,7 @@ Một hash session ổn định chọn key hoặc proxy ẩn danh ưu tiên. G�
 
 Session và project do gateway tự tạo được tách theo server key của bên gọi, nên các key khác nhau không bao giờ dùng chung session upstream, key ưu tiên hay proxy ẩn danh. Session OpenCode chính thức (`ses_…`) do client gửi được giữ nguyên. Không có ID tường minh, system prompt cùng tin nhắn người dùng đầu tiên được dùng làm seed. Vì vậy các hội thoại trong cùng một key có system prompt và nội dung mở đầu giống nhau vẫn có thể dùng chung affinity; hãy cấp server key riêng cho những người dùng cần tách biệt. Thay đổi thành phần nhóm có thể làm đổi nút được chọn.
 
-Cooldown tăng theo cấp số nhân tối đa tám lần `performance.failure_cooldown_seconds`, và giá trị `Retry-After` dài hơn sẽ được tôn trọng. Nếu mọi key có xác thực đều đang nghỉ, định tuyến có thể thử key mà cooldown kết thúc sớm nhất. Các nút ẩn danh còn trong cooldown sẽ bị bỏ qua.
+Cooldown tăng theo cấp số nhân tối đa tám lần `performance.failure_cooldown_seconds`, và giá trị `Retry-After` dài hơn sẽ được tôn trọng. Key đang cooldown bị bỏ qua cho đến khi tự kích hoạt lại; nếu mọi key dùng được đều đang cooldown, request trả 429 mà không gọi upstream thay vì quét toàn bộ pool. Các nút ẩn danh còn trong cooldown cũng bị bỏ qua. Proxy nhận đủ số 403/429 liên tiếp đã cấu hình sẽ bị loại khỏi cả hai pool trong `performance.proxy_block_seconds`; khi bật `performance.require_proxy`, request không có proxy sẽ trả 503 thay vì dùng `direct`.
 
 ## Tham chiếu cấu hình
 
@@ -387,6 +387,9 @@ Dùng khi bản thân endpoint sau URL đã tự luân chuyển, còn từng exi
 | `performance.free_tier_block_seconds`    | `900`    | Thời gian cooldown cho exit bị tầng miễn phí đánh dấu.      |
 | `performance.connect_timeout_seconds`    | `5`      | Timeout thiết lập kết nối.                                  |
 | `performance.failure_cooldown_seconds`   | `15`     | Cooldown lỗi cơ sở.                                          |
+| `performance.proxy_block_threshold`      | `3`      | Số phản hồi 403/429 liên tiếp để chặn proxy; 0 tắt.          |
+| `performance.proxy_block_seconds`        | `900`    | Thời gian chặn proxy; 0 dùng mặc định 900 giây.              |
+| `performance.require_proxy`              | `false`  | Trả 503 thay vì dùng `direct` khi không có proxy.            |
 | `performance.max_idle_conns`             | `2048`   | Giới hạn kết nối rảnh cho mỗi transport proxy.              |
 | `performance.max_idle_conns_per_host`    | `256`    | Giới hạn kết nối rảnh cho mỗi host và transport.            |
 | `performance.max_conns_per_host`         | `0`      | Giới hạn kết nối cho mỗi host; 0 là không giới hạn.        |

@@ -257,6 +257,16 @@ const DICTIONARY = {
       "config.secrets.anonymous": "Enable the Zen anonymous channel",
       "config.secrets.add": "One key per line",
       "config.proxy.title": "Proxy nodes",
+      "config.proxy.policy.title": "Proxy failure policy",
+      "config.proxy.policy.caption":
+        "Consecutive 403/429 responses take a proxy out of both key and anonymous pools; a direct-only deployment returns 503.",
+      "config.proxy.threshold": "Consecutive 403/429 block threshold",
+      "config.proxy.thresholdHint":
+        "0 disables proxy blocking; any other HTTP response resets the streak.",
+      "config.proxy.blockSeconds": "Block duration (seconds)",
+      "config.proxy.blockSecondsHint":
+        "0 uses the built-in 900 seconds; the proxy recovers automatically when the block expires.",
+      "config.proxy.require": "Return 503 when no proxy is usable (never fall back to direct)",
       "config.proxy.caption":
         "Supports direct, HTTP(S), and SOCKS URLs. Suffix an entry with #pool to mark it as a rotating proxy pool: the gateway then opens a fresh connection per attempt, skips its cooldown and health eviction, and retries it up to retry.max_attempts times.",
       "config.proxy.add": "Add proxies (one per line)",
@@ -423,6 +433,7 @@ const DICTIONARY = {
       "state.disabled": "Disabled",
       "state.cooling": "Cooling down",
       "state.available": "Ready",
+      "state.blocked": "Blocked",
 
       "breakdown.endpoint": "Endpoint",
       "breakdown.status": "Status code",
@@ -816,6 +827,16 @@ const DICTIONARY = {
       "config.secrets.anonymous": "Bật kênh ẩn danh Zen",
       "config.secrets.add": "Mỗi dòng thêm một key",
       "config.proxy.title": "Nút Proxy",
+      "config.proxy.policy.title": "Chính sách lỗi Proxy",
+      "config.proxy.policy.caption":
+        "403/429 liên tiếp sẽ loại proxy khỏi cả pool key và pool ẩn danh; triển khai chỉ có direct sẽ trả 503.",
+      "config.proxy.threshold": "Ngưỡng chặn 403/429 liên tiếp",
+      "config.proxy.thresholdHint":
+        "0 tắt chặn proxy; mọi phản hồi HTTP khác sẽ đặt lại chuỗi đếm.",
+      "config.proxy.blockSeconds": "Thời gian chặn (giây)",
+      "config.proxy.blockSecondsHint":
+        "0 dùng mặc định 900 giây; proxy tự phục hồi khi hết thời gian chặn.",
+      "config.proxy.require": "Trả 503 khi không có proxy dùng được (không fallback direct)",
       "config.proxy.caption":
         "Hỗ trợ direct, HTTP(S) và URL SOCKS. Thêm hậu tố #pool để đánh dấu mục đó là proxy pool luân chuyển: gateway sẽ mở kết nối mới cho mỗi lần thử, bỏ qua cooldown và loại bỏ theo sức khoẻ, và thử lại tối đa retry.max_attempts lần.",
       "config.proxy.add": "Thêm Proxy (mỗi dòng một cái)",
@@ -983,6 +1004,7 @@ const DICTIONARY = {
       "state.disabled": "Đang tắt",
       "state.cooling": "Đang nghỉ (cooldown)",
       "state.available": "Sẵn sàng",
+      "state.blocked": "Bị chặn",
 
       "breakdown.endpoint": "Endpoint",
       "breakdown.status": "Mã trạng thái",
@@ -1386,6 +1408,16 @@ const DICTIONARY = {
       "config.secrets.anonymous": "Abilita il canale anonimo Zen",
       "config.secrets.add": "Una chiave per riga",
       "config.proxy.title": "Nodi proxy",
+      "config.proxy.policy.title": "Politica errori proxy",
+      "config.proxy.policy.caption":
+        "Risposte 403/429 consecutive escludono il proxy dai pool key e anonimo; un deployment solo direct restituisce 503.",
+      "config.proxy.threshold": "Soglia blocchi 403/429 consecutivi",
+      "config.proxy.thresholdHint":
+        "0 disabilita il blocco proxy; qualsiasi altra risposta HTTP azzera la sequenza.",
+      "config.proxy.blockSeconds": "Durata blocco (secondi)",
+      "config.proxy.blockSecondsHint":
+        "0 usa i 900 secondi predefiniti; il proxy si riattiva automaticamente alla scadenza.",
+      "config.proxy.require": "Restituisci 503 quando nessun proxy è utilizzabile (mai fallback a direct)",
       "config.proxy.caption":
         "Supporta URL direct, HTTP(S) e SOCKS. Aggiungi il suffisso #pool a una voce per contrassegnarla come pool proxy rotante: il gateway apre allora una nuova connessione per ogni tentativo, salta il cooldown e l'eviction dei nodi non integri, e la ritenta fino a retry.max_attempts volte.",
       "config.proxy.add": "Aggiungi proxy (uno per riga)",
@@ -1554,6 +1586,7 @@ const DICTIONARY = {
       "state.disabled": "Disabilitato",
       "state.cooling": "In cooldown",
       "state.available": "Pronto",
+      "state.blocked": "Bloccato",
 
       "breakdown.endpoint": "Endpoint",
       "breakdown.status": "Codice di stato",

@@ -27,6 +27,14 @@
 - 元数据以 `server_key_metadata` 保存在原配置中，按 Key 指纹关联；已有 `server_keys` 自动兼容。
 - 当前未实现按 Key 单独分配模型权限、用量配额或过期时间。
 
+## Key 冷却与 Proxy 封锁
+
+`performance.failure_cooldown_seconds` 是 Key 失败冷却的基数；Key 收到 429、401、403、5xx 或传输错误后进入冷却，冷却期间不会被选中，到期自动恢复。所有可用 Key 都在冷却时，请求直接返回 429，不再轮询整个 Key 池。
+
+`performance.proxy_block_threshold`（默认 `3`）控制同一个 Proxy 连续收到多少次 429/403 后封锁；`performance.proxy_block_seconds`（默认 `900`）是封锁时长，到期自动恢复。封锁中的 Proxy 同时移出 Key 池和匿名池。`performance.require_proxy`（默认 `false`）开启后，没有可用 Proxy 时直接返回 503，不再回退到 `direct`。
+
+上游 403/429 的原始响应体不再透传：403 返回本地 `暂时不可用`，429 返回本地 `当前 rate limit`。WebUI「Proxy 节点」页提供阈值、封锁时长和 require_proxy 开关；概览的 Key 池与 Proxy 表会显示冷却/封锁状态。
+
 ## WARP 免费模型出口
 
 WebUI「Proxy 节点」页底部新增 WARP 开关，对应配置 `warp.enabled`（默认关闭）、`warp.pool_size`（1–32，默认 2；出口数量上限，活跃出口按并发动态调整）、`warp.stack`（默认 `ipv6`，可选 `ipv4` 或 `dual`）和 `warp.source_ipv6`（外层 IPv6 源前缀，需配合 `stack = "ipv6"`）。开启后，匿名通道、免费模型的 Zen Key 回退、免费模型可用性探测和匿名模型目录刷新都通过用户态 Cloudflare WARP 出网，不再使用任何代理；Go 套餐 Key 与付费模型保持原有代理绑定。

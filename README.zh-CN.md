@@ -292,7 +292,7 @@ Key 初始化时均衡分配到代理。真实流量可以触发代理检查、K
 
 网关自行生成的会话与项目标识按调用方的服务端 Key 隔离，不同 Key 不会共享上游会话、首选 Key 或匿名代理；客户端自带的官方 OpenCode 会话（`ses_…`）原样保留。没有显式会话 ID 时，使用系统提示词和第一条用户消息生成会话标识，因此同一 Key 下系统提示词和开场内容都相同的会话仍可能共享亲和性。需要互相隔离的用户应各自使用独立的服务端 Key。调整 Key 或代理池成员后，原有会话选择的节点可能变化。
 
-失败冷却按指数增长，最高为 `performance.failure_cooldown_seconds` 的八倍；如果上游的 `Retry-After` 更长，则使用更长时间。所有认证 Key 都处于冷却时，路由仍可能尝试最早结束冷却的 Key；仍在冷却的匿名节点会被跳过。
+失败冷却按指数增长，最高为 `performance.failure_cooldown_seconds` 的八倍；如果上游的 `Retry-After` 更长，则使用更长时间。冷却中的 Key 会被跳过，到时间后自动恢复；如果所有可用 Key 都在冷却，请求直接返回 429，不再轮询整个 Key 池。 上游 403/429 的原始响应体不会透传：客户端只会收到本地的 403 `暂时不可用` 或 429 `当前 rate limit`。仍在冷却的匿名节点同样会被跳过。一个代理连续收到配置数量的 429/403 后，会在 `performance.proxy_block_seconds` 内同时移出 Key 池和匿名池；开启 `performance.require_proxy` 后，没有可用代理时返回 503，不回退 `direct`。
 
 ## 配置参考
 
@@ -393,6 +393,9 @@ pool+http://127.0.0.1:7891
 | `performance.attempt_timeout_seconds`   | `0`    | 单次尝试的总超时；0 表示使用请求总超时。         |
 | `performance.max_anonymous_exits`       | `8`    | 每个匿名请求最多尝试的静态代理出口数。           |
 | `performance.free_tier_block_seconds`   | `900`  | 被免费层标记的出口冷却时长。                     |
+| `performance.proxy_block_threshold`     | `3`    | 连续 429/403 达到该次数后封锁代理；0 关闭。      |
+| `performance.proxy_block_seconds`       | `900`  | 代理封锁时长；0 使用内置的 900 秒。              |
+| `performance.require_proxy`             | `false` | 没有可用代理时返回 503，不回退 `direct`。        |
 | `performance.connect_timeout_seconds`   | `5`    | 建立连接的超时。                                 |
 | `performance.failure_cooldown_seconds`  | `15`   | 失败冷却基数。                                   |
 | `performance.max_idle_conns`            | `2048` | 每个代理 Transport 的空闲连接上限。              |

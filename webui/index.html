@@ -864,6 +864,44 @@
                 <section class="section">
                   <div class="section-head">
                     <div>
+                      <h2 class="section-title" data-i18n="config.proxy.policy.title">Proxy 失败策略</h2>
+                      <p class="section-caption" data-i18n="config.proxy.policy.caption">
+                        连续 403/429 达到阈值后，代理会同时移出 Key 池和匿名池；只有 direct 时直接返回 503。
+                      </p>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="c-proxy-block-threshold" data-i18n="config.proxy.threshold">
+                        连续 403/429 封锁阈值
+                      </label>
+                      <input id="c-proxy-block-threshold" type="number" min="0" />
+                      <p class="section-caption" data-i18n="config.proxy.thresholdHint">
+                        0 关闭代理封锁；其他 HTTP 响应会把连续计数清零。
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="c-proxy-block-seconds" data-i18n="config.proxy.blockSeconds">
+                        封锁时长（秒）
+                      </label>
+                      <input id="c-proxy-block-seconds" type="number" min="0" />
+                      <p class="section-caption" data-i18n="config.proxy.blockSecondsHint">
+                        0 使用内置的 900 秒；到期后代理自动恢复。
+                      </p>
+                    </div>
+                    <div class="field full">
+                      <label class="check">
+                        <input id="c-require-proxy" type="checkbox" />
+                        <span data-i18n="config.proxy.require">
+                          没有可用 Proxy 时返回 503（不回退 direct）
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </section>
+                <section class="section">
+                  <div class="section-head">
+                    <div>
                       <h2 class="section-title" data-i18n="config.warp.title">WARP 出口</h2>
                       <p class="section-caption" data-i18n="config.warp.caption">
                         开启后，免费模型流量（匿名通道、免费模型 Zen Key、免费模型探测）改走用户态 WARP，不再使用任何 Proxy；Go 套餐与付费模型保持不变。出口收到 429/403 立即淘汰并在后台重新注册，免费模型请求持续轮换出口，用完 retry.max_attempts 次后才把最后一个 429 返回客户端。

@@ -59,6 +59,9 @@ function fillConfig(value) {
   $("#c-warp-stack").value = warp.stack || "ipv6";
   $("#c-warp-source").value = warp.source_ipv6 || "";
   $("#c-proxyfile").value = value.proxyfile;
+  $("#c-proxy-block-threshold").value = value.performance.proxy_block_threshold ?? 3;
+  $("#c-proxy-block-seconds").value = value.performance.proxy_block_seconds ?? 900;
+  $("#c-require-proxy").checked = !!value.performance.require_proxy;
   $("#c-up-zen").value = value.upstream.zen;
   $("#c-up-go").value = value.upstream.go;
   $("#c-attempts").value = value.retry.max_attempts;
@@ -124,6 +127,9 @@ async function save(event) {
         failure_cooldown_seconds: numberValue("#c-cooldown"),
         attempt_timeout_seconds: numberValue("#c-attempt-timeout"),
         first_event_timeout_seconds: numberValue("#c-first-event-timeout"),
+        proxy_block_threshold: numberValue("#c-proxy-block-threshold"),
+        proxy_block_seconds: numberValue("#c-proxy-block-seconds"),
+        require_proxy: $("#c-require-proxy").checked,
       },
       logging: {
         level: $("#c-level").value,

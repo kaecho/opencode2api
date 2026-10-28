@@ -286,7 +286,7 @@ Un hash di sessione stabile seleziona la chiave o il proxy anonimo preferito. In
 
 Senza un ID esplicito, il primo messaggio dell'utente viene usato come seme. Conversazioni che iniziano con lo stesso contenuto possono quindi condividere l'affinità. Modificare i membri del pool può cambiare il nodo selezionato.
 
-I cooldown aumentano esponenzialmente fino a otto volte `performance.failure_cooldown_seconds`; viene rispettato anche un valore `Retry-After` più lungo. Se tutte le chiavi autenticate sono in cooldown, l'instradamento può provare quella il cui cooldown termina prima. I nodi anonimi ancora in cooldown vengono ignorati.
+I cooldown aumentano esponenzialmente fino a otto volte `performance.failure_cooldown_seconds`; viene rispettato anche un valore `Retry-After` più lungo. Una chiave in cooldown viene saltata fino alla riattivazione; se tutte le chiavi utilizzabili sono in cooldown, la richiesta restituisce 429 senza contattare l'upstream invece di scorrere il pool. I nodi anonimi ancora in cooldown vengono ignorati. Un proxy che restituisce il numero configurato di 403/429 consecutivi viene rimosso da entrambi i pool per `performance.proxy_block_seconds`; con `performance.require_proxy`, una richiesta senza proxy restituisce 503 invece di usare `direct`.
 
 ## Riferimento della configurazione
 
@@ -377,6 +377,9 @@ Usalo quando l'endpoint dietro l'URL esegue già la rotazione e i singoli IP di 
 | `performance.attempt_timeout_seconds`      | `0`         | Limite per tentativo; 0 usa il timeout della richiesta.   |
 | `performance.connect_timeout_seconds`      | `5`         | Timeout per stabilire la connessione.                     |
 | `performance.failure_cooldown_seconds`     | `15`        | Cooldown di errore di base.                               |
+| `performance.proxy_block_threshold`        | `3`         | Risposte 403/429 consecutive che bloccano un proxy; 0 disabilita. |
+| `performance.proxy_block_seconds`          | `900`       | Durata del blocco proxy; 0 usa i 900 secondi predefiniti. |
+| `performance.require_proxy`                | `false`     | Restituisce 503 invece di usare `direct` senza proxy.     |
 | `performance.max_idle_conns`               | `2048`      | Limite connessioni inattive per trasporto proxy.           |
 | `performance.max_idle_conns_per_host`      | `256`       | Limite connessioni inattive per host e trasporto.          |
 | `performance.max_conns_per_host`           | `0`         | Limite connessioni per host; 0 significa illimitato.       |

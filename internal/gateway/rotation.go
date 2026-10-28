@@ -228,8 +228,9 @@ func (g *Gateway) rotationAttempt(parent context.Context, w http.ResponseWriter,
 		return result
 	}
 	proxy := g.goNodes.Proxy(node)
-	if proxy == nil {
-		result.err = errors.New("no proxy")
+	if proxy == nil || !proxy.available(time.Now(), g.cfg.Performance.RequireProxy) {
+		result.err = errProxyUnavailable
+		result.reason = "proxy_error"
 		return result
 	}
 	attemptIDs := identity.ForUpstreamKey(ids, config.Fingerprint(node.key), time.Now())

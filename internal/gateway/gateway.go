@@ -23,6 +23,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,13 +59,14 @@ func attemptDeadline(cfg config.Config) time.Duration {
 // gateway could answer, so the failure is neither upstream nor ours.
 const statusClientClosedRequest = 499
 
-// proxyUnavailableMessage is the 503 message sent when the error a request
-// finally failed with is tagged errProxyUnavailable: its last attempt never
-// reached the upstream because the proxy route failed, or the anonymous lane
-// had no proxy to try while none was healthy. Only that final error is
-// inspected; earlier attempts may have failed for other reasons. The message
-// points operators at their proxies instead of the upstream.
-const proxyUnavailableMessage = "all proxies are unavailable; the upstream could not be reached"
+// Local, client-facing messages for upstream failures. The upstream 403/429
+// bodies are never relayed: they contain provider-specific subscription and
+// abuse text that does not help a gateway caller.
+const (
+	proxyUnavailableMessage  = "当前服务不可用"
+	upstreamForbiddenMessage = "暂时不可用"
+	upstreamRateLimitMessage = "当前 rate limit"
+)
 
 // Gateway serves the local inference API for one configuration. It owns the
 // proxy transports and the key and anonymous node pools built from that
@@ -93,6 +95,10 @@ type Gateway struct {
 	// freeTierBlock is how long an exit the free tier flagged stays out of the
 	// anonymous cursor. Zero uses freeTierBlockTTL.
 	freeTierBlock time.Duration
+	// proxyBlockThreshold and proxyBlockDuration implement the operator's
+	// consecutive-429/403 policy for a proxy. A zero threshold disables it.
+	proxyBlockThreshold int
+	proxyBlockDuration  time.Duration
 }
 
 // New builds a Gateway for cfg: one proxy transport per runtime proxy (a
@@ -111,11 +117,11 @@ func New(cfg config.Config, logger *slog.Logger, monitor *telemetry.Metrics, war
 		return nil, err
 	}
 	cooldown := time.Duration(cfg.Performance.FailureCooldownSeconds) * time.Second
-	zenNodes, err := nodePool(cfg.ZenKeys, transports, cooldown)
+	zenNodes, err := nodePool(cfg.ZenKeys, transports, cooldown, cfg.Performance.RequireProxy)
 	if err != nil {
 		return nil, fmt.Errorf("zen node pool: %w", err)
 	}
-	goNodes, err := nodePool(cfg.GoKeys, transports, cooldown)
+	goNodes, err := nodePool(cfg.GoKeys, transports, cooldown, cfg.Performance.RequireProxy)
 	if err != nil {
 		return nil, fmt.Errorf("go node pool: %w", err)
 	}
@@ -125,18 +131,20 @@ func New(cfg config.Config, logger *slog.Logger, monitor *telemetry.Metrics, war
 	catalog.SetRefreshInterval(time.Duration(cfg.Models.RefreshSeconds) * time.Second)
 	catalog.SetFreeOnly(cfg.Models.FreeOnly)
 	return &Gateway{
-		cfg:            cfg,
-		rotation:       rotationManager,
-		logger:         logger,
-		transports:     transports,
-		zenNodes:       zenNodes,
-		goNodes:        goNodes,
-		anonymous:      anonymousPool(cfg.Anonymous, transports, cooldown, anonymousBackoffFromConfig(cfg.Models.AnonymousBackoff)),
-		warp:           warpPool,
-		catalog:        catalog,
-		monitor:        monitor,
-		attemptTimeout: attemptDeadline(cfg),
-		freeTierBlock:  time.Duration(cfg.Performance.FreeTierBlockSeconds) * time.Second,
+		cfg:                 cfg,
+		rotation:            rotationManager,
+		logger:              logger,
+		transports:          transports,
+		zenNodes:            zenNodes,
+		goNodes:             goNodes,
+		anonymous:           anonymousPool(cfg.Anonymous, transports, cooldown, anonymousBackoffFromConfig(cfg.Models.AnonymousBackoff), cfg.Performance.RequireProxy),
+		warp:                warpPool,
+		catalog:             catalog,
+		monitor:             monitor,
+		attemptTimeout:      attemptDeadline(cfg),
+		freeTierBlock:       time.Duration(cfg.Performance.FreeTierBlockSeconds) * time.Second,
+		proxyBlockThreshold: cfg.Performance.ProxyBlockThreshold,
+		proxyBlockDuration:  time.Duration(cfg.Performance.ProxyBlockSeconds) * time.Second,
 	}, nil
 }
 
@@ -340,6 +348,9 @@ func (g *Gateway) handleInference(external wire.Protocol) http.HandlerFunc {
 				return
 			}
 			g.logger.Warn("all upstream attempts failed", "component", "upstream", "event", "request_failed", "request_id", ids.Request, "tier", finalTier, "key_id", keyID, "channel", channel, "anonymous", anonymous, "error", err)
+			if writeKeysCoolingError(w, external, err, ids.Request) {
+				return
+			}
 			// The final attempt never reached the upstream because its proxy
 			// route failed; report that instead of blaming the upstream with
 			// a 502.
@@ -362,7 +373,7 @@ func (g *Gateway) handleInference(external wire.Protocol) http.HandlerFunc {
 			// the client to retry into the same penalty, so answer with the
 			// block itself.
 			if errors.Is(err, errFreeTierIPBlocked) {
-				wire.WriteError(w, external, http.StatusServiceUnavailable, freeTierBlockedMessage, "free_tier_ip_blocked", ids.Request)
+				wire.WriteError(w, external, http.StatusForbidden, upstreamForbiddenMessage, "temporarily_unavailable", ids.Request)
 				return
 			}
 			// The anonymous lane's circuit breaker is open. Report the pause
@@ -538,6 +549,9 @@ func (g *Gateway) forwardSystemOne(w http.ResponseWriter, r *http.Request, body 
 			return
 		}
 		g.logger.Warn("all upstream attempts failed", "component", "upstream", "event", "request_failed", "request_id", ids.Request, "tier", finalTier, "key_id", keyID, "channel", channel, "anonymous", anonymous, "error", err)
+		if writeKeysCoolingError(w, wire.SystemOne, err, ids.Request) {
+			return
+		}
 		if errors.Is(err, errProxyUnavailable) {
 			wire.WriteError(w, wire.SystemOne, http.StatusServiceUnavailable, proxyUnavailableMessage, "proxy_error", ids.Request)
 			return
@@ -639,11 +653,38 @@ func (g *Gateway) prepareRouteBodies(from wire.Protocol, route models.Route, inp
 	return bodies, nil
 }
 
+// writeKeysCoolingError answers a request that found every eligible key in
+// cooldown without contacting the upstream. It sets Retry-After from the
+// earliest reactivation time and reports whether it handled err.
+func writeKeysCoolingError(w http.ResponseWriter, protocol wire.Protocol, err error, requestID string) bool {
+	var cooling *keysCoolingError
+	if !errors.As(err, &cooling) {
+		return false
+	}
+	if cooling != nil && !cooling.until.IsZero() {
+		seconds := int(time.Until(cooling.until).Seconds())
+		if seconds > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+		}
+	}
+	wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, "rate_limited", requestID)
+	return true
+}
+
 // copyErrorResponse relays a non-2xx upstream reply as an error in the
-// client's protocol. It keeps the status and any Retry-After, and takes the
+// client's protocol. Upstream 403 and 429 bodies are replaced with local
+// messages; other statuses keep their status and any Retry-After, and take the
 // message from a JSON body's error.message or message, falling back to the
 // status text.
 func copyErrorResponse(w http.ResponseWriter, protocol wire.Protocol, resp *http.Response, requestID string) {
+	switch resp.StatusCode {
+	case http.StatusForbidden:
+		wire.WriteError(w, protocol, http.StatusForbidden, upstreamForbiddenMessage, "temporarily_unavailable", requestID)
+		return
+	case http.StatusTooManyRequests:
+		wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, "rate_limited", requestID)
+		return
+	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
 		w.Header().Set("Retry-After", retryAfter)

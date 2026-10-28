@@ -33,11 +33,17 @@ type proxyTransport struct {
 	index        int
 	name         string
 	pool         bool
+	direct       bool
 	client       *http.Client
 	bun          *http.Client
 	healthy      atomic.Bool
 	checking     atomic.Bool
 	blockedUntil atomic.Int64
+	// rateFailures counts consecutive 429/403 responses carried by this
+	// proxy. rateBlockedUntil keeps it out of both pools once the configured
+	// threshold is reached.
+	rateFailures     atomic.Uint32
+	rateBlockedUntil atomic.Int64
 }
 
 // proxyTransports holds every configured proxy route, indexed by
@@ -64,14 +70,37 @@ func (t *proxyTransport) markBlocked(until time.Time) {
 	t.blockedUntil.Store(until.UnixNano())
 }
 
+// rateBlocked reports whether consecutive upstream 429/403 responses have
+// taken this proxy out of both pools.
+func (t *proxyTransport) rateBlocked(now time.Time) bool {
+	if t == nil {
+		return false
+	}
+	return t.rateBlockedUntil.Load() > now.UnixNano()
+}
+
+// available reports whether this transport can carry traffic now. A nil,
+// unhealthy, rate-blocked or (when requireProxy is set) direct transport is
+// not usable.
+func (t *proxyTransport) available(now time.Time, requireProxy bool) bool {
+	if t == nil || !t.healthy.Load() {
+		return false
+	}
+	if requireProxy && t.direct {
+		return false
+	}
+	return !t.rateBlocked(now)
+}
+
 // anonymousNodes gives the shared OpenCode "public" credential an independent
 // cooldown per proxy. Unlike key nodes, anonymous nodes are never rebound:
 // changing proxy is the failover mechanism because Zen rate-limits them by IP.
 type anonymousNodes struct {
-	nodes    []*anonymousNode
-	next     atomic.Uint64
-	cooldown time.Duration
-	hasPool  bool
+	nodes        []*anonymousNode
+	next         atomic.Uint64
+	cooldown     time.Duration
+	hasPool      bool
+	requireProxy bool
 	// breaker stops the whole lane after repeated failures or when every
 	// exit is under the free tier's IP block: the lane then pauses for
 	// backoff.base, doubling every further trip (one strike per trip) up to
@@ -108,8 +137,8 @@ type anonymousCursor struct {
 
 // anonymousPool builds one anonymous node per proxy transport, or an empty
 // pool when the anonymous tier is disabled.
-func anonymousPool(enabled bool, transports *proxyTransports, cooldown time.Duration, backoff anonymousBackoff) *anonymousNodes {
-	pool := &anonymousNodes{cooldown: cooldown, backoff: backoff}
+func anonymousPool(enabled bool, transports *proxyTransports, cooldown time.Duration, backoff anonymousBackoff, requireProxy bool) *anonymousNodes {
+	pool := &anonymousNodes{cooldown: cooldown, backoff: backoff, requireProxy: requireProxy}
 	if !enabled || transports == nil {
 		return pool
 	}
@@ -142,6 +171,20 @@ func (p *anonymousNodes) blockedExits(now time.Time) bool {
 		}
 	}
 	return true
+}
+
+// hasUsableExit reports whether any anonymous node currently has a usable
+// proxy. It is the anonymous counterpart of upstreamNodes.hasUsableProxy.
+func (p *anonymousNodes) hasUsableExit(now time.Time) bool {
+	if p == nil {
+		return false
+	}
+	for _, node := range p.nodes {
+		if node.proxy != nil && node.proxy.available(now, p.requireProxy) && !node.proxy.blocked(now) {
+			return true
+		}
+	}
+	return false
 }
 
 // HasPool reports whether any node uses a rotating proxy pool (#pool), which
@@ -292,7 +335,7 @@ func (c *anonymousCursor) Next() *anonymousNode {
 	}
 	now := time.Now().UnixNano()
 	isBlocked := func(node *anonymousNode) bool {
-		return node.proxy != nil && node.proxy.blockedUntil.Load() > now
+		return node.proxy != nil && (node.proxy.blockedUntil.Load() > now || node.proxy.rateBlocked(time.Now()))
 	}
 	for c.offset < n {
 		idx := (c.start + c.offset) % n
@@ -305,7 +348,8 @@ func (c *anonymousCursor) Next() *anonymousNode {
 			c.used[idx] = true
 			continue
 		}
-		if node.proxy.pool || (!c.used[idx] && node.proxy.healthy.Load() && node.cooldownUntil.Load() <= now) {
+		if node.proxy.available(time.Now(), c.pool.requireProxy) &&
+			(node.proxy.pool || (!c.used[idx] && node.cooldownUntil.Load() <= now)) {
 			c.used[idx] = true
 			return node
 		}
@@ -315,7 +359,7 @@ func (c *anonymousCursor) Next() *anonymousNode {
 			idx := (c.start + c.offset) % n
 			c.offset++
 			node := c.pool.nodes[idx]
-			if node.proxy.pool && !isBlocked(node) {
+			if node.proxy.pool && node.proxy.available(time.Now(), c.pool.requireProxy) && !isBlocked(node) {
 				return node
 			}
 		}
@@ -329,7 +373,7 @@ func (c *anonymousCursor) Next() *anonymousNode {
 			continue
 		}
 		node := c.pool.nodes[idx]
-		if isBlocked(node) {
+		if isBlocked(node) || !node.proxy.available(time.Now(), c.pool.requireProxy) {
 			continue
 		}
 		healthy := node.proxy.healthy.Load()
@@ -410,20 +454,22 @@ func (p *anonymousNodes) MarkFailure(node *anonymousNode, resp *http.Response, e
 }
 
 func (p *proxyTransports) hasHealthy() bool {
+	now := time.Now()
 	for _, proxy := range p.items {
-		if proxy.healthy.Load() {
+		if proxy.healthy.Load() && !proxy.rateBlocked(now) {
 			return true
 		}
 	}
 	return false
 }
 
-func (p *proxyTransports) healthCounts() (total, healthy int) {
+func (p *proxyTransports) healthCounts(requireProxy bool) (total, healthy int) {
 	if p == nil {
 		return 0, 0
 	}
+	now := time.Now()
 	for _, proxy := range p.items {
-		if proxy.healthy.Load() {
+		if proxy.available(now, requireProxy) {
 			healthy++
 		}
 	}
@@ -490,7 +536,7 @@ func transportPool(proxies []string, cfg config.PerformanceConfig, responseHeade
 		if err != nil {
 			return nil, fmt.Errorf("proxy %s: %w", config.RedactURL(raw), err)
 		}
-		proxy := &proxyTransport{index: len(p.items), name: raw, pool: isPool, client: &http.Client{Transport: transport}, bun: &http.Client{Transport: bun}}
+		proxy := &proxyTransport{index: len(p.items), name: raw, pool: isPool, direct: clean == "direct", client: &http.Client{Transport: transport}, bun: &http.Client{Transport: bun}}
 		proxy.healthy.Store(true)
 		p.items = append(p.items, proxy)
 	}
@@ -617,6 +663,7 @@ type upstreamNodes struct {
 	transports   *proxyTransports
 	next         atomic.Uint64
 	cooldown     time.Duration
+	requireProxy bool
 	bindingsMu   sync.Mutex
 	bindingCount []int
 }
@@ -625,7 +672,7 @@ type upstreamNodes struct {
 // are fewer keys than proxies, the remaining proxies are intentionally idle and
 // can take over a key immediately if an active proxy fails. It needs at least
 // one proxy transport.
-func nodePool(keys []string, transports *proxyTransports, cooldown time.Duration) (*upstreamNodes, error) {
+func nodePool(keys []string, transports *proxyTransports, cooldown time.Duration, requireProxy bool) (*upstreamNodes, error) {
 	if transports == nil || len(transports.items) == 0 {
 		return nil, fmt.Errorf("at least one proxy transport is required")
 	}
@@ -633,13 +680,25 @@ func nodePool(keys []string, transports *proxyTransports, cooldown time.Duration
 		nodes:        make([]*upstreamNode, 0, len(keys)),
 		transports:   transports,
 		cooldown:     cooldown,
+		requireProxy: requireProxy,
 		bindingCount: make([]int, len(transports.items)),
 	}
 	if len(keys) == 0 {
 		return pool, nil
 	}
+	// Direct is a transport, not a proxy. When require_proxy is set, keep it
+	// out of key bindings so a key is never parked on a route it cannot use.
+	candidates := make([]int, 0, len(transports.items))
+	for _, proxy := range transports.items {
+		if !requireProxy || !proxy.direct {
+			candidates = append(candidates, proxy.index)
+		}
+	}
 	for i, key := range keys {
-		proxyIndex := i % len(transports.items)
+		proxyIndex := 0
+		if len(candidates) > 0 {
+			proxyIndex = candidates[i%len(candidates)]
+		}
 		node := &upstreamNode{key: key, index: i, preferredProxy: proxyIndex}
 		node.proxyIndex.Store(int64(proxyIndex))
 		pool.nodes = append(pool.nodes, node)
@@ -663,6 +722,10 @@ func (p *upstreamNodes) RestoreProxy(recoveredProxy int) int {
 	for _, node := range p.nodes {
 		current := int(node.proxyIndex.Load())
 		if node.preferredProxy != recoveredProxy || current == recoveredProxy {
+			continue
+		}
+		proxy := p.transports.items[recoveredProxy]
+		if !proxy.available(time.Now(), p.requireProxy) {
 			continue
 		}
 		if current >= 0 && current < len(p.bindingCount) {
@@ -747,8 +810,11 @@ func (p *upstreamNodes) RebindProxy(failedProxy int) int {
 func (p *upstreamNodes) replacementLocked(failedProxy int, healthyOnly bool) int {
 	minimum := int(^uint(0) >> 1)
 	candidates := make([]int, 0, len(p.transports.items)-1)
-	for i := range p.transports.items {
-		if i == failedProxy || healthyOnly && !p.transports.items[i].healthy.Load() {
+	for i, proxy := range p.transports.items {
+		if i == failedProxy || healthyOnly && !proxy.healthy.Load() {
+			continue
+		}
+		if p.requireProxy && proxy.direct || proxy.rateBlocked(time.Now()) {
 			continue
 		}
 		count := p.bindingCount[i]
@@ -807,44 +873,61 @@ func (c *nodeCursor) Next() *upstreamNode {
 	if c.pool == nil || len(c.pool.nodes) == 0 {
 		return nil
 	}
-	now := time.Now().UnixNano()
-	ready, healthyReady := -1, -1
-	var earliest, healthyEarliest int64
-	choice, healthyChoice := -1, -1
+	now := time.Now()
 	for offset := range len(c.pool.nodes) {
 		i := (c.next + offset) % len(c.pool.nodes)
 		node := c.pool.nodes[i]
-		proxy := c.pool.Proxy(node)
-		healthy := proxy != nil && proxy.healthy.Load()
-		until := node.cooldownUntil.Load()
-		if until <= now {
-			if healthy {
-				healthyReady = i
-				break
-			}
-			if ready < 0 {
-				ready = i
-			}
+		if node.cooldownUntil.Load() > now.UnixNano() {
 			continue
 		}
-		if healthy && (healthyChoice < 0 || until < healthyEarliest) {
-			healthyChoice, healthyEarliest = i, until
+		proxy := c.pool.Proxy(node)
+		if proxy == nil || !proxy.available(now, c.pool.requireProxy) {
+			continue
 		}
-		if choice < 0 || until < earliest {
-			choice, earliest = i, until
+		c.next = (i + 1) % len(c.pool.nodes)
+		return node
+	}
+	return nil
+}
+
+// hasUsableKeyedProxy reports whether any key is currently bound to a usable
+// transport. It is the gate for the no-proxy 503: a spare transport with no
+// key cannot serve the request by itself.
+func (p *upstreamNodes) hasUsableKeyedProxy(now time.Time) bool {
+	if p == nil {
+		return false
+	}
+	for _, node := range p.nodes {
+		proxy := p.Proxy(node)
+		if proxy != nil && proxy.available(now, p.requireProxy) {
+			return true
 		}
 	}
-	if healthyReady >= 0 {
-		choice = healthyReady
-	} else if healthyChoice >= 0 {
-		choice = healthyChoice
-	} else if ready >= 0 {
-		choice = ready
-	} else if choice < 0 {
-		return nil
+	return false
+}
+
+// earliestCooldown returns the earliest active key cooldown on a transport
+// that is otherwise usable, or the zero time when no key is cooling.
+func (p *upstreamNodes) earliestCooldown(now time.Time) time.Time {
+	if p == nil {
+		return time.Time{}
 	}
-	c.next = (choice + 1) % len(c.pool.nodes)
-	return c.pool.nodes[choice]
+	var earliest time.Time
+	for _, node := range p.nodes {
+		until := node.cooldownUntil.Load()
+		if until <= now.UnixNano() {
+			continue
+		}
+		proxy := p.Proxy(node)
+		if proxy == nil || !proxy.available(now, p.requireProxy) {
+			continue
+		}
+		when := time.Unix(0, until)
+		if earliest.IsZero() || when.Before(earliest) {
+			earliest = when
+		}
+	}
+	return earliest
 }
 
 func (p *upstreamNodes) MarkSuccess(node *upstreamNode) {
