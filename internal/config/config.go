@@ -262,10 +262,6 @@ type PerformanceConfig struct {
 	// upstream. Zero disables the cap. The gateway appends its own official
 	// tool set after this check.
 	MaxClientTools int `json:"max_client_tools,omitempty"`
-	// ReuseOfficialTools replaces same-named client tool definitions with the
-	// captured official definition and keeps the official name. The official
-	// set is then completed with the remaining official tools.
-	ReuseOfficialTools bool `json:"reuse_official_tools,omitempty"`
 	// ZeroWidthKeywords inserts U+200B inside configured substrings in message
 	// text and tool descriptions before the upstream request is encoded.
 	ZeroWidthKeywords []string `json:"zero_width_keywords,omitempty"`
