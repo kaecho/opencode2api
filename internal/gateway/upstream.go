@@ -899,6 +899,7 @@ func (g *Gateway) doSelectedKeyUpstream(ctx context.Context, route models.Route,
 		recordProxy = warpProxy(egress)
 	}
 	g.recordUpstreamAttempt(ctx, route, ids, attemptOffset+1, keyID, "key", false, recordProxy, resp, err, duration)
+	g.logRateLimitResponse(ids.Request, route.ID, keyID, resp)
 	if err != nil {
 		if useWARP {
 			return nil, err, 1
