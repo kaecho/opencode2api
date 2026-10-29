@@ -916,7 +916,43 @@ func (p *upstreamNodes) hasUsableKeyedProxy(now time.Time) bool {
 	return false
 }
 
+// hasReadyKey reports whether at least one key is outside its short and long
+// freezes. Proxy availability is deliberately separate: a frozen key pool
+// must answer 429 even when the proxy is also unavailable.
+func (p *upstreamNodes) hasReadyKey(now time.Time) bool {
+	if p == nil {
+		return false
+	}
+	for _, node := range p.nodes {
+		if node.cooldownUntil.Load() <= now.UnixNano() && node.longFreezeUntil.Load() <= now.UnixNano() {
+			return true
+		}
+	}
+	return false
+}
+
+// earliestKeyCooldown returns the earliest key freeze deadline regardless of
+// proxy health, used for the local 429 Retry-After.
+func (p *upstreamNodes) earliestKeyCooldown(now time.Time) time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	var earliest time.Time
+	for _, node := range p.nodes {
+		until := max(node.cooldownUntil.Load(), node.longFreezeUntil.Load())
+		if until <= now.UnixNano() {
+			continue
+		}
+		when := time.Unix(0, until)
+		if earliest.IsZero() || when.Before(earliest) {
+			earliest = when
+		}
+	}
+	return earliest
+}
+
 // earliestCooldown returns the earliest active key cooldown on a transport
+// that is otherwise usable, or the zero time when no key is cooling.// earliestCooldown returns the earliest active key cooldown on a transport
 // that is otherwise usable, or the zero time when no key is cooling.
 func (p *upstreamNodes) earliestCooldown(now time.Time) time.Time {
 	if p == nil {

@@ -230,7 +230,15 @@ func (g *Gateway) doUpstreamTiers(ctx context.Context, route models.Route, bodie
 		return resp, route, attemptOffset + used, err
 	}
 	blocked := false
-	if route.Anonymous {
+	tryAnonymous := route.Anonymous
+	if tryAnonymous && g.zenNodes.Len() > 0 && !g.zenNodes.hasReadyKey(time.Now()) {
+		// Every Zen key is frozen. Do not open a keyless anonymous request;
+		// the key tier below returns the local 429 immediately.
+		tryAnonymous = false
+		lastErr = &keysCoolingError{until: g.zenNodes.earliestKeyCooldown(time.Now())}
+		g.logger.Debug("skipping anonymous lane because every Zen key is frozen", "component", "upstream", "event", "anonymous_skipped_keys_frozen", "request_id", ids.Request)
+	}
+	if tryAnonymous {
 		resp, err, used := g.doAnonymousUpstream(ctx, route, bodies, ids, attempts)
 		attempts += used
 		if err == nil && resp != nil && resp.StatusCode/100 == 2 {
@@ -922,7 +930,8 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 	}
 	cursor := nodes.CursorFor(ids.Session)
 	if nodes.Len() == 0 {
-		return nil, fmt.Errorf("no %s nodes configured", route.Tier), 0
+		// A keyed tier with no keys must not open an unauthenticated request.
+		return nil, &keysCoolingError{}, 0
 	}
 	attempts := 0
 	body := bodies[route.Tier]
@@ -935,8 +944,14 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 	}
 	setRequestShape(ctx, changed, toolRenames)
 	useWARP := g.usesWARP(route.ID, route.Tier, false)
-	if !useWARP && !nodes.hasUsableKeyedProxy(time.Now()) {
-		return nil, errProxyUnavailable, 0
+	if !useWARP {
+		now := time.Now()
+		if !nodes.hasReadyKey(now) {
+			return nil, &keysCoolingError{until: nodes.earliestKeyCooldown(now)}, 0
+		}
+		if !nodes.hasUsableKeyedProxy(now) {
+			return nil, errProxyUnavailable, 0
+		}
 	}
 	for attempts < g.cfg.Retry.MaxAttempts {
 		if ctx.Err() != nil {
@@ -951,12 +966,14 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 		if node == nil {
 			if lastResponse == nil {
 				if !useWARP {
-					if !nodes.hasUsableKeyedProxy(time.Now()) {
+					now := time.Now()
+					switch {
+					case !nodes.hasReadyKey(now):
+						lastErr = &keysCoolingError{until: nodes.earliestKeyCooldown(now)}
+					case !nodes.hasUsableKeyedProxy(now):
 						lastErr = errProxyUnavailable
-					} else if until := nodes.earliestCooldown(time.Now()); !until.IsZero() {
-						lastErr = &keysCoolingError{until: until}
-					} else {
-						lastErr = errors.New("no usable upstream key")
+					default:
+						lastErr = &keysCoolingError{until: nodes.earliestCooldown(now)}
 					}
 				} else {
 					lastErr = errors.New("no usable upstream key")

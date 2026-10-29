@@ -250,8 +250,36 @@ func TestKeyPoolNoProxyAfterProxyBlock(t *testing.T) {
 	if resp != nil || attempts != 0 {
 		t.Fatalf("second request response=%+v attempts=%d, want nil/0", resp, attempts)
 	}
+	if _, ok := err.(*keysCoolingError); !ok {
+		t.Fatalf("second request error = %T %v, want keysCoolingError", err, err)
+	}
+}
+
+func TestKeyPoolNoProxyWithReadyKey(t *testing.T) {
+	proxy := testProxy(0, "http://proxy", false)
+	proxy.rateBlockedUntil.Store(time.Now().Add(time.Hour).UnixNano())
+	transports := testTransports(proxy)
+	pool, err := nodePool([]string{"key-a"}, transports, time.Hour, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &Gateway{
+		cfg: config.Config{
+			Upstream:    config.UpstreamConfig{Zen: "https://example.invalid/zen"},
+			Retry:       config.RetryConfig{MaxAttempts: 1},
+			Performance: config.PerformanceConfig{RequireProxy: true},
+		},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), transports: transports, zenNodes: pool,
+		catalog: models.Catalog(config.TierZen, nil),
+	}
+	route := models.Route{ID: "paid-model", Tier: config.TierZen, Protocol: wire.Chat}
+	bodies := map[config.Tier][]byte{config.TierZen: []byte(`{"model":"paid-model","messages":[],"stream":false}`)}
+	resp, err, attempts := g.doKeyUpstream(context.Background(), route, bodies, identity.RequestIDs{Session: "ses_test"}, 0)
+	if resp != nil || attempts != 0 {
+		t.Fatalf("response=%+v attempts=%d, want nil/0", resp, attempts)
+	}
 	if !errors.Is(err, errProxyUnavailable) {
-		t.Fatalf("second request error = %v, want errProxyUnavailable", err)
+		t.Fatalf("error = %v, want errProxyUnavailable", err)
 	}
 }
 
@@ -304,5 +332,31 @@ func TestPoolProxyNeverRateBlocked(t *testing.T) {
 	}
 	if proxy.rateFailures.Load() != 0 {
 		t.Fatalf("#pool proxy counted failures: %d", proxy.rateFailures.Load())
+	}
+}
+
+func TestAnonymousSkippedWhenAllZenKeysFrozen(t *testing.T) {
+	proxy := testProxy(0, "http://proxy", false)
+	transports := testTransports(proxy)
+	pool, err := nodePool([]string{"key-a"}, transports, time.Hour, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.nodes[0].cooldownUntil.Store(time.Now().Add(time.Hour).UnixNano())
+	g := &Gateway{
+		cfg:        config.Config{Upstream: config.UpstreamConfig{Zen: "https://example.invalid/zen"}, Retry: config.RetryConfig{MaxAttempts: 2}},
+		logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		transports: transports,
+		zenNodes:   pool,
+		catalog:    models.Catalog(config.TierZen, nil),
+	}
+	route := models.Route{ID: "free-model", Tier: config.TierZen, Protocol: wire.Chat, Anonymous: true, KeyTiers: []config.Tier{config.TierZen}}
+	bodies := map[config.Tier][]byte{config.TierZen: []byte(`{"model":"free-model","messages":[],"stream":false}`)}
+	resp, _, attempts, err := g.doUpstreamTiers(context.Background(), route, bodies, identity.RequestIDs{Session: "ses_test"}, 0)
+	if resp != nil || attempts != 0 {
+		t.Fatalf("response=%+v attempts=%d, want nil/0", resp, attempts)
+	}
+	if _, ok := err.(*keysCoolingError); !ok {
+		t.Fatalf("error = %T %v, want keysCoolingError", err, err)
 	}
 }
