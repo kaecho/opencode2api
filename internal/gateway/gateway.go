@@ -686,6 +686,9 @@ func copyErrorResponse(w http.ResponseWriter, protocol wire.Protocol, resp *http
 		wire.WriteError(w, protocol, http.StatusForbidden, upstreamForbiddenMessage, errorTypePermissionDenied, requestID)
 		return
 	case http.StatusTooManyRequests:
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			w.Header().Set("Retry-After", retryAfter)
+		}
 		wire.WriteError(w, protocol, http.StatusTooManyRequests, upstreamRateLimitMessage, errorTypeRateLimit, requestID)
 		return
 	}

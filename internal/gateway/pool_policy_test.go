@@ -121,16 +121,21 @@ func TestProxyRateBlockExpires(t *testing.T) {
 
 func TestCopyErrorResponseRewritesUpstreamBodies(t *testing.T) {
 	for _, test := range []struct {
-		status  int
-		message string
+		status     int
+		message    string
+		retryAfter string
 	}{
-		{http.StatusForbidden, "Temporarily unavailable"},
-		{http.StatusTooManyRequests, "Rate limit exceeded"},
+		{http.StatusForbidden, "Temporarily unavailable", ""},
+		{http.StatusTooManyRequests, "Rate limit exceeded", "3600"},
 	} {
 		rec := httptest.NewRecorder()
+		header := http.Header{}
+		if test.retryAfter != "" {
+			header.Set("Retry-After", test.retryAfter)
+		}
 		resp := &http.Response{
 			StatusCode: test.status,
-			Header:     http.Header{},
+			Header:     header,
 			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"OpenCode internal detail"}}`)),
 		}
 		copyErrorResponse(rec, wire.Chat, resp, "req_test")
@@ -142,6 +147,9 @@ func TestCopyErrorResponseRewritesUpstreamBodies(t *testing.T) {
 		}
 		if strings.Contains(rec.Body.String(), "OpenCode internal detail") {
 			t.Fatalf("upstream body leaked: %q", rec.Body.String())
+		}
+		if got := rec.Header().Get("Retry-After"); got != test.retryAfter {
+			t.Fatalf("Retry-After = %q, want %q", got, test.retryAfter)
 		}
 	}
 }
