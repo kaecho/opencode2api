@@ -976,7 +976,7 @@
                     <div>
                       <h2 class="section-title" data-i18n="config.proxy.policy.title">Proxy 失败策略</h2>
                       <p class="section-caption" data-i18n="config.proxy.policy.caption">
-                        连续 403/429 达到阈值后，代理会同时移出 Key 池和匿名池；只有 direct 时直接返回 503。
+                        连续 403/429 达到阈值后，静态代理会同时移出 Key 池和匿名池；`#pool` 和 `direct` 永不封锁。
                       </p>
                     </div>
                   </div>

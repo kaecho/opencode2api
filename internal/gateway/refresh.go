@@ -63,8 +63,10 @@ func (g *Gateway) syncProxyResult(ctx context.Context, proxy *proxyTransport, st
 // blocks the proxy for the configured duration once the threshold is reached.
 // Any other HTTP response clears the streak. Direct egress is never blocked:
 // it has no alternate route and the key cooldown already handles the outcome.
+// #pool entries are rotating endpoints, not one exit, so blocking the entry
+// would discard the whole rotation; they are excluded as well.
 func (g *Gateway) observeProxyStatus(proxy *proxyTransport, status int) {
-	if proxy == nil || proxy.direct {
+	if proxy == nil || proxy.direct || proxy.pool {
 		return
 	}
 	threshold := g.proxyBlockThreshold

@@ -33,7 +33,7 @@ Zen Key 的 429 规则独立于普通失败冷却：单次 429 短暂冻结 10 �
 
 WebUI 新增「上游 Key 池」页面，默认显示 Zen Key，可切换 Go 或全部。列表包含 Key 尾码、Tier、冷却状态、连续失败次数、Proxy 绑定和冷却截止时间；页面提供新增、删除和重置冷却操作。该页只操作上游调度 Key，不修改 `server_keys`；本地调用密钥仍在「API Key 管理」页。配置中心不再展示或编辑三类 Key，只保留匿名通道开关。重置只清除 Key 冷却，不解除 Proxy 封锁。
 
-`performance.proxy_block_threshold`（默认 `3`）控制同一个 Proxy 连续收到多少次 429/403 后封锁；`performance.proxy_block_seconds`（默认 `900`）是封锁时长，到期自动恢复。封锁中的 Proxy 同时移出 Key 池和匿名池。`performance.require_proxy`（默认 `false`）开启后，没有可用 Proxy 时直接返回 503，不再回退到 `direct`。
+`performance.proxy_block_threshold`（默认 `3`）控制同一个静态 Proxy 连续收到多少次 429/403 后封锁；`#pool` 是轮换入口，永不封锁；`performance.proxy_block_seconds`（默认 `900`）是封锁时长，到期自动恢复。封锁中的 Proxy 同时移出 Key 池和匿名池。`performance.require_proxy`（默认 `false`）开启后，没有可用 Proxy 时直接返回 503，不再回退到 `direct`。
 
 上游 403/429 的原始响应体不再透传：403 返回本地 `Temporarily unavailable`，429 返回本地 `Rate limit exceeded`。WebUI「Proxy 节点」页提供阈值、封锁时长和 require_proxy 开关；概览的 Key 池与 Proxy 表会显示冷却/封锁状态。
 

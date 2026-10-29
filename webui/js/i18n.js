@@ -310,7 +310,7 @@ const DICTIONARY = {
       "config.proxy.title": "Proxy nodes",
       "config.proxy.policy.title": "Proxy failure policy",
       "config.proxy.policy.caption":
-        "Consecutive 403/429 responses take a proxy out of both key and anonymous pools; a direct-only deployment returns 503.",
+        "Consecutive 403/429 responses take a static proxy out of both key and anonymous pools; #pool and direct are never blocked.",
       "config.proxy.threshold": "Consecutive 403/429 block threshold",
       "config.proxy.thresholdHint":
         "0 disables proxy blocking; any other HTTP response resets the streak.",
@@ -935,7 +935,7 @@ const DICTIONARY = {
       "config.proxy.title": "Nút Proxy",
       "config.proxy.policy.title": "Chính sách lỗi Proxy",
       "config.proxy.policy.caption":
-        "403/429 liên tiếp sẽ loại proxy khỏi cả pool key và pool ẩn danh; triển khai chỉ có direct sẽ trả 503.",
+        "403/429 liên tiếp sẽ loại proxy tĩnh khỏi cả pool key và pool ẩn danh; #pool và direct không bao giờ bị chặn.",
       "config.proxy.threshold": "Ngưỡng chặn 403/429 liên tiếp",
       "config.proxy.thresholdHint":
         "0 tắt chặn proxy; mọi phản hồi HTTP khác sẽ đặt lại chuỗi đếm.",
@@ -1571,7 +1571,7 @@ const DICTIONARY = {
       "config.proxy.title": "Nodi proxy",
       "config.proxy.policy.title": "Politica errori proxy",
       "config.proxy.policy.caption":
-        "Risposte 403/429 consecutive escludono il proxy dai pool key e anonimo; un deployment solo direct restituisce 503.",
+        "Risposte 403/429 consecutive escludono un proxy statico dai pool key e anonimo; #pool e direct non vengono mai bloccati.",
       "config.proxy.threshold": "Soglia blocchi 403/429 consecutivi",
       "config.proxy.thresholdHint":
         "0 disabilita il blocco proxy; qualsiasi altra risposta HTTP azzera la sequenza.",

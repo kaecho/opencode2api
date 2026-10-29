@@ -292,3 +292,17 @@ func TestResetKeyCooldown(t *testing.T) {
 		t.Fatal("reset accepted an unknown key")
 	}
 }
+
+func TestPoolProxyNeverRateBlocked(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	g := &Gateway{logger: logger, proxyBlockThreshold: 1, proxyBlockDuration: time.Hour}
+	proxy := testProxy(0, "http://pool", false)
+	proxy.pool = true
+	g.observeProxyStatus(proxy, http.StatusTooManyRequests)
+	if proxy.rateBlocked(time.Now()) {
+		t.Fatal("#pool proxy was rate-blocked")
+	}
+	if proxy.rateFailures.Load() != 0 {
+		t.Fatalf("#pool proxy counted failures: %d", proxy.rateFailures.Load())
+	}
+}
