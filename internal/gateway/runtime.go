@@ -68,6 +68,9 @@ type RuntimeController struct {
 	// and stack are unchanged. warpKey is the identity used for that reuse.
 	warpPool *warp.Pool
 	warpKey  string
+	// keyStates persists Zen/Go key freezes and counters across process
+	// restarts and configuration reloads.
+	keyStates *keyStateStore
 }
 
 // EffectiveListeners are the listener settings the running process actually
@@ -89,6 +92,11 @@ func RuntimeManager(root context.Context, configPath string, cfg config.Config, 
 		configPath: configPath, root: root, logger: logger, monitor: monitor, hub: hub, redactor: redactor, level: level,
 		effective: EffectiveListeners{API: cfg.Listen, WebUI: cfg.WebUI.Listen, WebUIEnabled: cfg.WebUI.Enabled},
 	}
+	keyStates, err := openKeyStateStore(configPath, logger)
+	if err != nil {
+		return nil, err
+	}
+	manager.keyStates = keyStates
 	manager.metadata = modelcatalog.PricingStore(configPath, logger)
 	// OpenCode metadata refreshes ride the active runtime's healthy proxy
 	// transports and fall back to the registry's direct client when none are
@@ -193,6 +201,9 @@ func (m *RuntimeController) build(cfg config.Config) (*gatewayRuntime, error) {
 		return nil, err
 	}
 	gateway.rotation = m.rotation
+	policy := keyFreezePolicyFromConfig(cfg)
+	gateway.zenNodes.bindKeyState(m.keyStates, "zen", policy)
+	gateway.goNodes.bindKeyState(m.keyStates, "go", policy)
 	availabilityPath := ""
 	if m.configPath != "" {
 		availabilityPath = m.configPath + "." + config.Fingerprint(cfg.Upstream.Zen) + ".availability.json"
@@ -452,6 +463,10 @@ func (m *RuntimeController) Shutdown() {
 		m.warpPool = nil
 		m.warpKey = ""
 	}
+	if m.keyStates != nil {
+		_ = m.keyStates.close()
+		m.keyStates = nil
+	}
 }
 
 // ResourceSnapshot is the operator view of the current runtime's models, keys,
@@ -480,13 +495,17 @@ type WarpStatus struct {
 // characters): its tier, its current proxy binding, its consecutive failures
 // and any active cooldown.
 type KeyStatus struct {
-	ID            string     `json:"id"`
-	Fingerprint   string     `json:"fingerprint"`
-	Tier          string     `json:"tier"`
-	Index         int        `json:"index"`
-	ProxyIndex    int        `json:"proxy_index"`
-	Failures      uint32     `json:"failures"`
-	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
+	ID              string     `json:"id"`
+	Fingerprint     string     `json:"fingerprint"`
+	Tier            string     `json:"tier"`
+	Index           int        `json:"index"`
+	ProxyIndex      int        `json:"proxy_index"`
+	Failures        uint32     `json:"failures"`
+	CooldownUntil   *time.Time `json:"cooldown_until,omitempty"`
+	LongFreezeUntil *time.Time `json:"long_freeze_until,omitempty"`
+	QuotaExhausted  bool       `json:"quota_exhausted"`
+	Consecutive429  uint32     `json:"consecutive_429"`
+	WindowStart     *time.Time `json:"window_start,omitempty"`
 }
 
 // ProxyStatus describes one proxy route: its redacted address, its health,
@@ -628,6 +647,17 @@ func (m *RuntimeController) DebugKey(tier config.Tier, id string) *DebugKeyView 
 	return nil
 }
 
+// DeleteKeyState removes persisted scheduling state for a removed key, so a
+// later re-add starts with a clean freeze and 429 history.
+func (m *RuntimeController) DeleteKeyState(tier config.Tier, fingerprint string) {
+	if m.keyStates == nil {
+		return
+	}
+	if err := m.keyStates.delete(string(tier), fingerprint); err != nil && m.logger != nil {
+		m.logger.Warn("delete upstream key state failed", "component", "keystate", "tier", tier, "error", err)
+	}
+}
+
 // ResetKeyCooldown clears a key's failure streak and cooldown immediately.
 // It is an operator action, not part of routing; a missing runtime or key
 // reports false. The key remains bound to its current proxy.
@@ -680,10 +710,24 @@ func (m *RuntimeController) DebugRouteForTier(model string, tier config.Tier) (m
 func keyStatuses(tier string, pool *upstreamNodes) []KeyStatus {
 	result := make([]KeyStatus, 0, len(pool.nodes))
 	for _, node := range pool.nodes {
-		status := KeyStatus{ID: config.KeyDisplayID(node.key), Fingerprint: config.Fingerprint(node.key), Tier: tier, Index: node.index, ProxyIndex: int(node.proxyIndex.Load()), Failures: node.failures.Load()}
-		if until := node.cooldownUntil.Load(); until > time.Now().UnixNano() {
+		now := time.Now()
+		pool.reactivateNode(node, now)
+		status := KeyStatus{
+			ID: config.KeyDisplayID(node.key), Fingerprint: config.Fingerprint(node.key), Tier: tier,
+			Index: node.index, ProxyIndex: int(node.proxyIndex.Load()), Failures: node.failures.Load(),
+			QuotaExhausted: node.quotaExhausted.Load(), Consecutive429: node.consecutive429.Load(),
+		}
+		if until := node.cooldownUntil.Load(); until > now.UnixNano() {
 			value := time.Unix(0, until).UTC()
 			status.CooldownUntil = &value
+		}
+		if until := node.longFreezeUntil.Load(); until > now.UnixNano() {
+			value := time.Unix(0, until).UTC()
+			status.LongFreezeUntil = &value
+		}
+		if start := node.windowStart.Load(); start > 0 {
+			value := time.Unix(0, start).UTC()
+			status.WindowStart = &value
 		}
 		result = append(result, status)
 	}

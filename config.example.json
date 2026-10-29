@@ -39,7 +39,11 @@
     "free_tier_block_seconds": 900,
     "proxy_block_threshold": 3,
     "proxy_block_seconds": 900,
-    "require_proxy": false
+    "require_proxy": false,
+    "zen_key_short_freeze_seconds": 600,
+    "zen_key_long_freeze_seconds": 86400,
+    "zen_key_429_threshold": 3,
+    "zen_key_429_window_seconds": 86400
   },
   "logging": {
     "level": "info",

@@ -102,8 +102,42 @@ func (a *Server) handleDeleteUpstreamKey(w http.ResponseWriter, r *http.Request)
 		writeAdminError(w, http.StatusBadRequest, "upstream_key_delete_failed", a.manager.Redact(err.Error()))
 		return
 	}
+	a.manager.DeleteKeyState(tier, id)
 	w.Header().Set("Cache-Control", "no-store")
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"deleted": true, "tier": tier, "id": id})
+}
+
+// handleSaveUpstreamKeyPolicy updates the Zen 429 freeze policy. The values
+// take effect on the next runtime build and are persisted in config.json.
+func (a *Server) handleSaveUpstreamKeyPolicy(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ShortFreezeSeconds int `json:"short_freeze_seconds"`
+		LongFreezeSeconds  int `json:"long_freeze_seconds"`
+		Threshold          int `json:"threshold"`
+		WindowSeconds      int `json:"window_seconds"`
+	}
+	if err := decodeAdminJSON(w, r, &input); err != nil {
+		writeAdminError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	_, err := a.manager.Update(func(cfg *config.Config) error {
+		cfg.Performance.ZenKeyShortFreezeSeconds = input.ShortFreezeSeconds
+		cfg.Performance.ZenKeyLongFreezeSeconds = input.LongFreezeSeconds
+		cfg.Performance.ZenKey429Threshold = input.Threshold
+		cfg.Performance.ZenKey429WindowSeconds = input.WindowSeconds
+		return nil
+	})
+	if err != nil {
+		writeAdminError(w, http.StatusBadRequest, "key_policy_update_failed", a.manager.Redact(err.Error()))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"short_freeze_seconds": input.ShortFreezeSeconds,
+		"long_freeze_seconds":  input.LongFreezeSeconds,
+		"threshold":            input.Threshold,
+		"window_seconds":       input.WindowSeconds,
+	})
 }
 
 // handleResetUpstreamKey clears one upstream key's cooldown and failure

@@ -292,7 +292,7 @@ Key 初始化时均衡分配到代理。真实流量可以触发代理检查、K
 
 网关自行生成的会话与项目标识按调用方的服务端 Key 隔离，不同 Key 不会共享上游会话、首选 Key 或匿名代理；客户端自带的官方 OpenCode 会话（`ses_…`）原样保留。没有显式会话 ID 时，使用系统提示词和第一条用户消息生成会话标识，因此同一 Key 下系统提示词和开场内容都相同的会话仍可能共享亲和性。需要互相隔离的用户应各自使用独立的服务端 Key。调整 Key 或代理池成员后，原有会话选择的节点可能变化。
 
-失败冷却按指数增长，最高为 `performance.failure_cooldown_seconds` 的八倍；如果上游的 `Retry-After` 更长，则使用更长时间。冷却中的 Key 会被跳过，到时间后自动恢复；如果所有可用 Key 都在冷却，请求直接返回 429，不再轮询整个 Key 池。 WebUI 的「上游 Key 池」页面列出 Zen / Go Key 的冷却、连续失败和 Proxy 绑定，并提供新增、删除和重置冷却操作；本地调用密钥仍在「API Key 管理」页面。 上游 403/429 的原始响应体不会透传：客户端只会收到本地的 403 `Temporarily unavailable` 或 429 `Rate limit exceeded`。仍在冷却的匿名节点同样会被跳过。一个代理连续收到配置数量的 429/403 后，会在 `performance.proxy_block_seconds` 内同时移出 Key 池和匿名池；开启 `performance.require_proxy` 后，没有可用代理时返回 503，不回退 `direct`。
+Zen Key 收到 429 后进入短暂冻结，默认 10 分钟。在 `performance.zen_key_429_window_seconds`（默认 24 小时）内连续遇到 `performance.zen_key_429_threshold`（默认 3）次 429 后，进入长冻结（默认 24 小时）并标记为额度用完。成功请求会清空连续次数和冻结状态。其他 Key 错误仍使用 `performance.failure_cooldown_seconds` 的指数退避，并遵守更长的 `Retry-After`。状态持久化到配置文件旁的 SQLite 数据库 `<config>.keys.db`，进程重启和配置热重载都不会丢失冻结、连续次数或额度用完标记。冻结中的 Key 会被跳过；所有可用 Key 都冻结时，请求直接返回本地 429，不再轮询整个 Key 池。WebUI 的「上游 Key 池」页面列出这些 Key 的冻结状态和 Proxy 绑定，并提供新增、删除、重置冷却和调度规则设置；本地调用密钥仍在「API Key 管理」页面。上游 403/429 的原始响应体不会透传：客户端只会收到本地的 403 `Temporarily unavailable` 或 429 `Rate limit exceeded`。
 
 ## 配置参考
 
@@ -396,6 +396,10 @@ pool+http://127.0.0.1:7891
 | `performance.proxy_block_threshold`     | `3`    | 连续 429/403 达到该次数后封锁代理；0 关闭。      |
 | `performance.proxy_block_seconds`       | `900`  | 代理封锁时长；0 使用内置的 900 秒。              |
 | `performance.require_proxy`             | `false` | 没有可用代理时返回 503，不回退 `direct`。        |
+| `performance.zen_key_short_freeze_seconds` | `600` | 单次 Zen Key 429 后的短暂冻结时长。 |
+| `performance.zen_key_long_freeze_seconds` | `86400` | 达到 429 阈值后的额度用完冻结时长。 |
+| `performance.zen_key_429_threshold` | `3` | 触发长冻结的连续 429 次数。 |
+| `performance.zen_key_429_window_seconds` | `86400` | 统计连续 429 的时间窗口。 |
 | `performance.connect_timeout_seconds`   | `5`    | 建立连接的超时。                                 |
 | `performance.failure_cooldown_seconds`  | `15`   | 失败冷却基数。                                   |
 | `performance.max_idle_conns`            | `2048` | 每个代理 Transport 的空闲连接上限。              |

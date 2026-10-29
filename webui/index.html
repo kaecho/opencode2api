@@ -568,6 +568,39 @@
             <section class="section">
               <div class="section-head">
                 <div>
+                  <h2 class="section-title" data-i18n="upstreamKeys.policy.title">Zen 调度规则</h2>
+                  <p class="section-caption" data-i18n="upstreamKeys.policy.caption">
+                    单次 429 短暂冻结；统计窗口内连续 429 达到阈值后长冻结并标记额度用完。Go Key 不使用这套规则。
+                  </p>
+                </div>
+              </div>
+              <form id="zen-key-policy-form" class="form-grid">
+                <div class="field">
+                  <label for="zen-key-short-freeze" data-i18n="upstreamKeys.policy.short">短暂冻结（秒）</label>
+                  <input id="zen-key-short-freeze" type="number" min="1" />
+                </div>
+                <div class="field">
+                  <label for="zen-key-long-freeze" data-i18n="upstreamKeys.policy.long">额度用完冻结（秒）</label>
+                  <input id="zen-key-long-freeze" type="number" min="1" />
+                </div>
+                <div class="field">
+                  <label for="zen-key-429-threshold" data-i18n="upstreamKeys.policy.threshold">连续 429 阈值</label>
+                  <input id="zen-key-429-threshold" type="number" min="1" />
+                </div>
+                <div class="field">
+                  <label for="zen-key-429-window" data-i18n="upstreamKeys.policy.window">统计窗口（秒）</label>
+                  <input id="zen-key-429-window" type="number" min="1" />
+                </div>
+                <div class="field">
+                  <button id="zen-key-policy-save" type="submit" class="btn btn-primary" data-i18n="upstreamKeys.policy.save">
+                    保存调度规则
+                  </button>
+                </div>
+              </form>
+            </section>
+            <section class="section">
+              <div class="section-head">
+                <div>
                   <h2 class="section-title" data-i18n="upstreamKeys.table.title">调度队列</h2>
                   <p class="section-caption" data-i18n="upstreamKeys.table.caption">
                     429/失败后 Key 进入冷却，冷却期间不会被选中；重置只清除 Key 冷却，不解除 Proxy 封锁。

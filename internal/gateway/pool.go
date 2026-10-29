@@ -653,6 +653,12 @@ type upstreamNode struct {
 	proxyIndex     atomic.Int64
 	failures       atomic.Uint32
 	cooldownUntil  atomic.Int64
+	// Zen-specific 429 policy state. The short freeze reuses cooldownUntil;
+	// longFreezeUntil is the quota-exhausted period.
+	longFreezeUntil atomic.Int64
+	quotaExhausted  atomic.Bool
+	consecutive429  atomic.Uint32
+	windowStart     atomic.Int64
 }
 
 // upstreamNodes is one tier's key pool. bindingsMu serializes rebinding and
@@ -664,6 +670,9 @@ type upstreamNodes struct {
 	next         atomic.Uint64
 	cooldown     time.Duration
 	requireProxy bool
+	tier         string
+	policy       keyFreezePolicy
+	keyStore     *keyStateStore
 	bindingsMu   sync.Mutex
 	bindingCount []int
 }
@@ -877,7 +886,8 @@ func (c *nodeCursor) Next() *upstreamNode {
 	for offset := range len(c.pool.nodes) {
 		i := (c.next + offset) % len(c.pool.nodes)
 		node := c.pool.nodes[i]
-		if node.cooldownUntil.Load() > now.UnixNano() {
+		c.pool.reactivateNode(node, now)
+		if node.cooldownUntil.Load() > now.UnixNano() || node.longFreezeUntil.Load() > now.UnixNano() {
 			continue
 		}
 		proxy := c.pool.Proxy(node)
@@ -914,7 +924,7 @@ func (p *upstreamNodes) earliestCooldown(now time.Time) time.Time {
 	}
 	var earliest time.Time
 	for _, node := range p.nodes {
-		until := node.cooldownUntil.Load()
+		until := max(node.cooldownUntil.Load(), node.longFreezeUntil.Load())
 		if until <= now.UnixNano() {
 			continue
 		}
@@ -931,15 +941,36 @@ func (p *upstreamNodes) earliestCooldown(now time.Time) time.Time {
 }
 
 func (p *upstreamNodes) MarkSuccess(node *upstreamNode) {
+	if node == nil {
+		return
+	}
+	changed := node.failures.Load() != 0 || node.cooldownUntil.Load() != 0 ||
+		node.longFreezeUntil.Load() != 0 || node.quotaExhausted.Load() ||
+		node.consecutive429.Load() != 0 || node.windowStart.Load() != 0
 	node.failures.Store(0)
 	node.cooldownUntil.Store(0)
+	node.longFreezeUntil.Store(0)
+	node.quotaExhausted.Store(false)
+	node.consecutive429.Store(0)
+	node.windowStart.Store(0)
+	if changed {
+		p.saveNode(node)
+	}
 }
 
 // MarkFailure cools node down after an error or a 401, 403, 429 or 5xx
-// response; any other response leaves it untouched. The cooldown doubles with
-// each consecutive failure, from the base cooldown up to 8x, and an upstream
-// Retry-After longer than that is honored in full.
+// response; any other response leaves it untouched. A Zen-key 429 follows the
+// account policy: a short freeze, then a long quota-exhausted freeze after the
+// configured number of consecutive 429s within the window. Every other
+// failure keeps the existing exponential cooldown. The state is persisted.
 func (p *upstreamNodes) MarkFailure(node *upstreamNode, resp *http.Response, err error) {
+	if node == nil {
+		return
+	}
+	if p.tier == "zen" && resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+		p.markZen429(node)
+		return
+	}
 	if err == nil && resp != nil && resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
 		return
 	}
@@ -952,6 +983,109 @@ func (p *upstreamNodes) MarkFailure(node *upstreamNode, resp *http.Response, err
 		}
 	}
 	node.cooldownUntil.Store(time.Now().Add(delay).UnixNano())
+	p.saveNode(node)
+}
+
+// markZen429 applies the Zen account policy. It counts 429s in the configured
+// window, short-freezes on every one, and long-freezes plus marks quota
+// exhausted when the threshold is reached.
+func (p *upstreamNodes) markZen429(node *upstreamNode) {
+	now := time.Now()
+	node.failures.Add(1)
+	count := node.consecutive429.Load()
+	start := node.windowStart.Load()
+	if start == 0 || now.UnixNano()-start >= p.policy.window.Nanoseconds() {
+		start = now.UnixNano()
+		count = 1
+	} else {
+		count++
+	}
+	shortUntil := now.Add(p.policy.shortFreeze).UnixNano()
+	longUntil := int64(0)
+	if count >= p.policy.threshold {
+		longUntil = now.Add(p.policy.longFreeze).UnixNano()
+		node.quotaExhausted.Store(true)
+		count = 0
+		start = 0
+		shortUntil = 0
+	} else {
+		node.quotaExhausted.Store(false)
+	}
+	node.consecutive429.Store(count)
+	node.windowStart.Store(start)
+	node.longFreezeUntil.Store(longUntil)
+	node.cooldownUntil.Store(shortUntil)
+	p.saveNode(node)
+}
+
+// reactivateNode clears expiry state lazily when a key is examined. A long
+// freeze end resets the 429 streak and quota marker so the account gets a
+// fresh window after the 24-hour pause.
+func (p *upstreamNodes) reactivateNode(node *upstreamNode, now time.Time) {
+	if node == nil {
+		return
+	}
+	long := node.longFreezeUntil.Load()
+	if long > 0 && long <= now.UnixNano() {
+		node.longFreezeUntil.Store(0)
+		node.quotaExhausted.Store(false)
+		node.consecutive429.Store(0)
+		node.windowStart.Store(0)
+		node.cooldownUntil.Store(0)
+		p.saveNode(node)
+		return
+	}
+	if until := node.cooldownUntil.Load(); until > 0 && until <= now.UnixNano() {
+		node.cooldownUntil.Store(0)
+	}
+	if start := node.windowStart.Load(); start > 0 && now.UnixNano()-start >= p.policy.window.Nanoseconds() {
+		node.windowStart.Store(0)
+		node.consecutive429.Store(0)
+	}
+}
+
+func (p *upstreamNodes) bindKeyState(store *keyStateStore, tier string, policy keyFreezePolicy) {
+	p.keyStore = store
+	p.tier = tier
+	p.policy = policy
+	if store == nil {
+		return
+	}
+	for _, node := range p.nodes {
+		state, ok, err := store.load(tier, config.Fingerprint(node.key))
+		if err != nil {
+			if store.logger != nil {
+				store.logger.Warn("load upstream key state failed", "component", "keystate", "tier", tier, "key_id", config.KeyDisplayID(node.key), "error", err)
+			}
+			continue
+		}
+		if !ok {
+			continue
+		}
+		node.failures.Store(state.Failures)
+		node.cooldownUntil.Store(state.ShortFreezeUntil)
+		node.longFreezeUntil.Store(state.LongFreezeUntil)
+		node.quotaExhausted.Store(state.QuotaExhausted)
+		node.consecutive429.Store(state.Consecutive429)
+		node.windowStart.Store(state.WindowStart)
+	}
+}
+
+func (p *upstreamNodes) saveNode(node *upstreamNode) {
+	if p == nil || p.keyStore == nil || node == nil {
+		return
+	}
+	state := keyState{
+		ShortFreezeUntil: node.cooldownUntil.Load(),
+		LongFreezeUntil:  node.longFreezeUntil.Load(),
+		QuotaExhausted:   node.quotaExhausted.Load(),
+		Consecutive429:   node.consecutive429.Load(),
+		WindowStart:      node.windowStart.Load(),
+		Failures:         node.failures.Load(),
+	}
+	if err := p.keyStore.save(p.tier, config.Fingerprint(node.key), state); err != nil && p.keyStore.logger != nil {
+		p.keyStore.logger.Warn("save upstream key state failed", "component", "keystate", "tier", p.tier, "key_id", config.KeyDisplayID(node.key), "error", err)
+	}
 }
 
 // parseRetryAfter reads a Retry-After header in delta-seconds or HTTP-date

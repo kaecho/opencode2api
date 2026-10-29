@@ -119,6 +119,7 @@ async function save(event) {
         effort_by_model: JSON.parse($("#c-reasoning-by-model").value || "{}"),
       },
       performance: {
+        ...current.performance,
         max_idle_conns: numberValue("#c-idle"),
         max_idle_conns_per_host: numberValue("#c-idle-host"),
         max_conns_per_host: numberValue("#c-max-host"),

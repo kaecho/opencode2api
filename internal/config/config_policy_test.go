@@ -24,4 +24,7 @@ func TestLoadProxyPolicyDefaults(t *testing.T) {
 	if cfg.Performance.RequireProxy {
 		t.Fatal("require_proxy defaulted to true")
 	}
+	if cfg.Performance.ZenKeyShortFreezeSeconds != 600 || cfg.Performance.ZenKeyLongFreezeSeconds != 86400 || cfg.Performance.ZenKey429Threshold != 3 || cfg.Performance.ZenKey429WindowSeconds != 86400 {
+		t.Fatalf("unexpected zen 429 policy defaults: %+v", cfg.Performance)
+	}
 }

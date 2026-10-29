@@ -29,7 +29,7 @@
 
 ## Key 冷却与 Proxy 封锁
 
-`performance.failure_cooldown_seconds` 是 Key 失败冷却的基数；Key 收到 429、401、403、5xx 或传输错误后进入冷却，冷却期间不会被选中，到期自动恢复。所有可用 Key 都在冷却时，请求直接返回 429，不再轮询整个 Key 池。
+Zen Key 的 429 规则独立于普通失败冷却：单次 429 短暂冻结 10 分钟；在 24 小时窗口内连续 429 达到 3 次后长冻结 24 小时并标记额度用完。短冻结时长、长冻结时长、次数和窗口分别由 `performance.zen_key_short_freeze_seconds`、`performance.zen_key_long_freeze_seconds`、`performance.zen_key_429_threshold`、`performance.zen_key_429_window_seconds` 控制。成功请求会清空连续次数和冻结状态。状态写入配置文件旁的 SQLite 数据库 `<config>.keys.db`，重启或热重载后仍然有效。其他 Key 错误仍使用 `performance.failure_cooldown_seconds` 的指数退避。所有可用 Key 都冻结时，请求直接返回 429，不再轮询整个 Key 池。
 
 WebUI 新增「上游 Key 池」页面，默认显示 Zen Key，可切换 Go 或全部。列表包含 Key 尾码、Tier、冷却状态、连续失败次数、Proxy 绑定和冷却截止时间；页面提供新增、删除和重置冷却操作。该页只操作上游调度 Key，不修改 `server_keys`；本地调用密钥仍在「API Key 管理」页。配置中心不再展示或编辑三类 Key，只保留匿名通道开关。重置只清除 Key 冷却，不解除 Proxy 封锁。
 

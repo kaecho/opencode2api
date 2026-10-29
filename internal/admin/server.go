@@ -64,6 +64,7 @@ func (a *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/account", a.authenticate(a.csrf(http.HandlerFunc(a.handleAccount))))
 	mux.Handle("GET /api/monitor", a.authenticate(http.HandlerFunc(a.handleMonitor)))
 	mux.Handle("GET /api/debug/models", a.authenticate(http.HandlerFunc(a.handleDebugModels)))
+	mux.Handle("PUT /api/upstream-keys/policy", a.authenticate(a.csrf(http.HandlerFunc(a.handleSaveUpstreamKeyPolicy))))
 	mux.Handle("POST /api/upstream-keys/{tier}", a.authenticate(a.csrf(http.HandlerFunc(a.handleCreateUpstreamKey))))
 	mux.Handle("DELETE /api/upstream-keys/{tier}/{id}", a.authenticate(a.csrf(http.HandlerFunc(a.handleDeleteUpstreamKey))))
 	mux.Handle("POST /api/upstream-keys/{tier}/{id}/reset", a.authenticate(a.csrf(http.HandlerFunc(a.handleResetUpstreamKey))))
