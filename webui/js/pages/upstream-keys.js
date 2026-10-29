@@ -5,6 +5,17 @@ import { t, onChange } from "../i18n.js";
 import * as store from "../store.js";
 import { $, confirmDialog, el, emptyRow, remainingDuration, toast } from "../ui.js";
 
+let ticker = null;
+
+function startTicker() {
+  if (ticker) return;
+  ticker = setInterval(() => {
+    for (const cell of document.querySelectorAll("#upstream-key-rows [data-remaining]")) {
+      cell.textContent = remainingDuration(cell.dataset.remaining);
+    }
+  }, 1000);
+}
+
 function visibleKeys() {
   const tier = $("#upstream-key-tier")?.value || "zen";
   const keys = store.get("monitor")?.resources?.keys || [];
@@ -91,7 +102,11 @@ function render() {
         }),
         el("td", { class: "num", text: String(key.failures || 0) }),
         el("td", { class: "mono", text: proxyText }),
-        el("td", { class: "mono", text: remainingDuration(key.cooldown_until) }),
+        el("td", {
+          class: "mono",
+          text: remainingDuration(key.cooldown_until),
+          dataset: key.cooldown_until ? { remaining: key.cooldown_until } : {},
+        }),
         el("td", {}, [el("div", { class: "key-actions" }, [reset, remove])]),
       ]),
     );
@@ -152,6 +167,7 @@ export default {
     $("#upstream-key-tier").addEventListener("change", render);
     $("#upstream-key-refresh").addEventListener("click", refresh);
     $("#upstream-key-form").addEventListener("submit", add);
+    startTicker();
     store.on("monitor", render);
     onChange(render);
   },
