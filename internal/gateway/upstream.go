@@ -613,6 +613,12 @@ func (g *Gateway) inferenceClient(proxy *proxyTransport, baseURL, model string) 
 // payloads are decision requests, not agent traffic, so they are forwarded
 // verbatim, as is a body that is not a JSON object.
 func prepareAnonymousBody(body []byte, protocol wire.Protocol, v1 bool) ([]byte, *wire.ToolRenames) {
+	return prepareAnonymousBodyWithOptions(body, protocol, v1, false)
+}
+
+// prepareAnonymousBodyWithOptions is prepareAnonymousBody with optional reuse
+// of official definitions for same-named client tools.
+func prepareAnonymousBodyWithOptions(body []byte, protocol wire.Protocol, v1 bool, reuseOfficial bool) ([]byte, *wire.ToolRenames) {
 	if protocol == wire.SystemOne {
 		return body, nil
 	}
@@ -631,7 +637,7 @@ func prepareAnonymousBody(body []byte, protocol wire.Protocol, v1 bool) ([]byte,
 	if injectOfficialPrompt(payload, protocol, v1) {
 		changed = true
 	}
-	renames, toolsChanged := renameAndCompleteTools(payload, protocol, v1)
+	renames, toolsChanged := renameAndCompleteTools(payload, protocol, v1, reuseOfficial)
 	if toolsChanged {
 		changed = true
 	}
@@ -828,7 +834,7 @@ func (g *Gateway) shapeKeyBody(body []byte, route models.Route, tier config.Tier
 	if tier == config.TierGo {
 		baseURL = g.cfg.Upstream.Go
 	}
-	shaped, renames := prepareAnonymousBody(body, route.ProtocolFor(tier), models.IsV1Upstream(baseURL))
+	shaped, renames := prepareAnonymousBodyWithOptions(body, route.ProtocolFor(tier), models.IsV1Upstream(baseURL), g.cfg.Performance.ReuseOfficialTools)
 	return shaped, renames, !bytes.Equal(shaped, body)
 }
 

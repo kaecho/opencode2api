@@ -177,7 +177,7 @@ func v1BashDescription(base string) string {
 // every named client tool is renamed with the clint_ prefix, legacy functions
 // arrays are converted, and the full official set for the lane is appended.
 // The returned map restores the client names in the upstream response.
-func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 bool) (*wire.ToolRenames, bool) {
+func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 bool, reuseOfficial bool) (*wire.ToolRenames, bool) {
 	switch protocol {
 	case wire.Chat, wire.Responses, wire.Anthropic:
 	default:
@@ -198,6 +198,7 @@ func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 b
 		}
 	}
 	shaped := make([]any, 0, len(items)+len(officialToolNames(v1)))
+	reusedOfficial := make(map[string]bool)
 	for _, item := range items {
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -209,12 +210,24 @@ func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 b
 			shaped = append(shaped, item)
 			continue
 		}
+		if reuseOfficial {
+			if _, official := officialToolDefinition(name, v1); official {
+				shaped = append(shaped, officialTool(protocol, name, v1))
+				reusedOfficial[name] = true
+				continue
+			}
+		}
 		if wireName := clientWireName(renames, used, name); wireName != name {
 			setToolName(protocol, entry, wireName)
 		}
 		shaped = append(shaped, entry)
 	}
-	shaped = append(shaped, officialToolset(protocol, v1)...)
+	for _, name := range officialToolNames(v1) {
+		if reusedOfficial[name] {
+			continue
+		}
+		shaped = append(shaped, officialTool(protocol, name, v1))
+	}
 	payload["tools"] = shaped
 	rewriteToolReferences(payload, protocol, renames)
 	return renames, true
