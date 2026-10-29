@@ -1045,6 +1045,7 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 			g.observeKeyResult(ctx, nodes, node, proxy, resp, err)
 		}
 		g.recordUpstreamAttempt(ctx, route, ids, attemptOffset+attempts, keyID, "key", false, recordProxy, resp, err, attemptDuration)
+		g.logRateLimitResponse(ids.Request, route.ID, keyID, resp)
 		if err == nil && resp.StatusCode/100 == 2 {
 			g.logger.Debug("upstream accepted request", "component", "upstream", "event", "attempt_succeeded", "request_id", ids.Request, "attempt", attempts, "tier", route.Tier, "key_id", keyID, "proxy", proxyLabel, "status", resp.StatusCode, "duration_ms", attemptDuration.Milliseconds())
 			return resp, nil, attempts
@@ -1078,6 +1079,30 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 		return lastResponse, nil, attempts
 	}
 	return nil, lastErr, attempts
+}
+
+// logRateLimitResponse records the upstream 429 headers and a capped body
+// snippet. The body is restored for the normal error path; this is diagnostic
+// only and never forwards upstream text to a client.
+func (g *Gateway) logRateLimitResponse(requestID, model, keyID string, resp *http.Response) {
+	if g == nil || g.logger == nil || resp == nil || resp.StatusCode != http.StatusTooManyRequests {
+		return
+	}
+	body := peekResponseBody(resp)
+	snippet := strings.TrimSpace(string(body))
+	if len(snippet) > 512 {
+		snippet = snippet[:512]
+	}
+	g.logger.Info("upstream rate limit response",
+		"component", "upstream", "event", "upstream_rate_limit_body",
+		"request_id", requestID, "model", model, "key_id", keyID,
+		"status", resp.StatusCode,
+		"retry_after", resp.Header.Get("Retry-After"),
+		"content_type", resp.Header.Get("Content-Type"),
+		"server", resp.Header.Get("Server"),
+		"cf_ray", resp.Header.Get("CF-Ray"),
+		"cf_mitigated", resp.Header.Get("CF-Mitigated"),
+		"snippet", snippet)
 }
 
 // observeKeyResult feeds the outcome of one key attempt back into proxy health
