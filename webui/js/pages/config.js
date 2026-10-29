@@ -131,6 +131,7 @@ async function save(event) {
         attempt_timeout_seconds: numberValue("#c-attempt-timeout"),
         first_event_timeout_seconds: numberValue("#c-first-event-timeout"),
         max_client_tools: numberValue("#c-max-client-tools"),
+        reuse_official_tools: $("#c-reuse-official-tools").checked,
         zero_width_keywords: $("#c-zero-width-keywords")
           .value.split(/\r?\n/)
           .map((item) => item.trim())

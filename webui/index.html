@@ -1183,6 +1183,17 @@
                       </p>
                     </div>
                     <div class="field full">
+                      <label class="check">
+                        <input id="c-reuse-official-tools" type="checkbox" />
+                        <span data-i18n="config.performance.reuseOfficialTools">
+                          客户端工具与官方工具重叠时复用官方定义
+                        </span>
+                      </label>
+                      <p class="section-caption" data-i18n="config.performance.reuseOfficialToolsHint">
+                        会省略 bash、web_fetch、web_search 及同名客户端工具，由官方工具替代，并把调用名还原给客户端。
+                      </p>
+                    </div>
+                    <div class="field full">
                       <label for="c-zero-width-keywords" data-i18n="config.performance.zeroWidth">
                         零宽字符关键词（每行一个）
                       </label>

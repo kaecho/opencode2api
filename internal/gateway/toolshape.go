@@ -177,7 +177,7 @@ func v1BashDescription(base string) string {
 // every named client tool is renamed with the clint_ prefix, legacy functions
 // arrays are converted, and the full official set for the lane is appended.
 // The returned map restores the client names in the upstream response.
-func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 bool) (*wire.ToolRenames, bool) {
+func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 bool, reuseOfficial bool) (*wire.ToolRenames, bool) {
 	switch protocol {
 	case wire.Chat, wire.Responses, wire.Anthropic:
 	default:
@@ -209,6 +209,15 @@ func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 b
 			shaped = append(shaped, item)
 			continue
 		}
+		if reuseOfficial {
+			canonical := canonicalToolName(name)
+			if _, official := officialToolDefinition(canonical, v1); official {
+				if canonical != name {
+					renames.Add(name, canonical)
+				}
+				continue
+			}
+		}
 		if wireName := clientWireName(renames, used, name); wireName != name {
 			setToolName(protocol, entry, wireName)
 		}
@@ -218,6 +227,21 @@ func renameAndCompleteTools(payload map[string]any, protocol wire.Protocol, v1 b
 	payload["tools"] = shaped
 	rewriteToolReferences(payload, protocol, renames)
 	return renames, true
+}
+
+// canonicalToolName groups client and official names that describe the same
+// capability, so a client definition can be replaced by the official one.
+func canonicalToolName(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "bash", "shell":
+		return "shell"
+	case "web_fetch", "webfetch":
+		return "webfetch"
+	case "web_search", "websearch":
+		return "websearch"
+	default:
+		return strings.ToLower(strings.TrimSpace(name))
+	}
 }
 
 // renamableToolName returns the client tool name of one definition. Responses

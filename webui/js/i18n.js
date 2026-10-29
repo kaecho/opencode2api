@@ -356,6 +356,9 @@ const DICTIONARY = {
       "config.performance.maxClientTools": "Max client tools",
       "config.performance.maxClientToolsHint":
         "0 disables the cap; the gateway appends its official tool set afterward.",
+      "config.performance.reuseOfficialTools": "Reuse official definitions for overlapping client tools",
+      "config.performance.reuseOfficialToolsHint":
+        "Omits bash, web_fetch, web_search, and same-named client tools; the official tool replaces them and the call name is restored for the client.",
       "config.performance.zeroWidth": "Zero-width keywords (one per line)",
       "config.performance.zeroWidthHint":
         "Matches message text and tool descriptions only, inserting U+200B between matched characters. Model names, tool names, and tool arguments are untouched.",
@@ -982,6 +985,9 @@ const DICTIONARY = {
       "config.performance.maxClientTools": "Số tool client tối đa",
       "config.performance.maxClientToolsHint":
         "0 để tắt giới hạn; gateway vẫn thêm bộ tool chính thức sau đó.",
+      "config.performance.reuseOfficialTools": "Dùng định nghĩa chính thức cho tool client trùng",
+      "config.performance.reuseOfficialToolsHint":
+        "Bỏ qua bash, web_fetch, web_search và tool client cùng tên; tool chính thức thay thế và tên gọi được khôi phục cho client.",
       "config.performance.zeroWidth": "Từ khóa zero-width (mỗi dòng một từ)",
       "config.performance.zeroWidthHint":
         "Chỉ áp dụng cho nội dung tin nhắn và mô tả tool, chèn U+200B giữa các ký tự khớp. Tên model, tên tool và tham số tool không bị đổi.",
@@ -1619,6 +1625,9 @@ const DICTIONARY = {
       "config.performance.maxClientTools": "Numero massimo di tool client",
       "config.performance.maxClientToolsHint":
         "0 disabilita il limite; il gateway aggiunge comunque il set ufficiale di tool.",
+      "config.performance.reuseOfficialTools": "Riusa le definizioni ufficiali per i tool client sovrapposti",
+      "config.performance.reuseOfficialToolsHint":
+        "Omette bash, web_fetch, web_search e i tool client con lo stesso nome; il tool ufficiale li sostituisce e il nome della chiamata viene ripristinato per il client.",
       "config.performance.zeroWidth": "Parole chiave zero-width (una per riga)",
       "config.performance.zeroWidthHint":
         "Agisce solo su testo dei messaggi e descrizioni dei tool, inserendo U+200B tra i caratteri corrispondenti. Nomi di modello, tool e parametri non vengono modificati.",

@@ -398,6 +398,7 @@ pool+http://127.0.0.1:7891
 | `performance.proxy_block_seconds`       | `900`  | 代理封锁时长；0 使用内置的 900 秒。              |
 | `performance.require_proxy`             | `false` | 没有可用代理时返回 503，不回退 `direct`。        |
 | `performance.max_client_tools`          | `0`     | 限制客户端工具定义数量，之后再追加官方工具集；0 表示不限制。免费层在网关追加 12 个官方工具后，客户端工具最多 17 个。 |
+| `performance.reuse_official_tools`      | `false` | 与官方工具重叠的客户端工具改用官方定义，包括 bash/shell 和两个 web 别名；响应中的官方调用名还原成客户端名。 |
 | `performance.zero_width_keywords`       | `[]`    | 在消息文本和工具描述中插入 U+200B 的关键词列表。 |
 | `performance.connect_timeout_seconds`   | `5`    | 建立连接的超时。                                 |
 | `performance.failure_cooldown_seconds`  | `15`   | 失败冷却基数。                                   |
