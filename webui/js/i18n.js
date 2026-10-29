@@ -356,6 +356,9 @@ const DICTIONARY = {
       "config.performance.maxClientTools": "Max client tools",
       "config.performance.maxClientToolsHint":
         "0 disables the cap; the gateway appends its official tool set afterward.",
+      "config.performance.maxUpstreamTools": "Max total upstream tools",
+      "config.performance.maxUpstreamToolsHint":
+        "Includes client tools and de-duplicated official tools; 0 disables the cap. The free tier returned 429 at 30 total tools.",
       "config.performance.zeroWidth": "Zero-width keywords (one per line)",
       "config.performance.zeroWidthHint":
         "Matches message text and tool descriptions only, inserting U+200B between matched characters. Model names, tool names, and tool arguments are untouched.",
@@ -982,6 +985,9 @@ const DICTIONARY = {
       "config.performance.maxClientTools": "Số tool client tối đa",
       "config.performance.maxClientToolsHint":
         "0 để tắt giới hạn; gateway vẫn thêm bộ tool chính thức sau đó.",
+      "config.performance.maxUpstreamTools": "Tổng số tool upstream tối đa",
+      "config.performance.maxUpstreamToolsHint":
+        "Bao gồm tool client và tool chính thức đã loại trùng; 0 để tắt giới hạn. Bậc miễn phí trả 429 khi tổng là 30.",
       "config.performance.zeroWidth": "Từ khóa zero-width (mỗi dòng một từ)",
       "config.performance.zeroWidthHint":
         "Chỉ áp dụng cho nội dung tin nhắn và mô tả tool, chèn U+200B giữa các ký tự khớp. Tên model, tên tool và tham số tool không bị đổi.",
@@ -1619,6 +1625,9 @@ const DICTIONARY = {
       "config.performance.maxClientTools": "Numero massimo di tool client",
       "config.performance.maxClientToolsHint":
         "0 disabilita il limite; il gateway aggiunge comunque il set ufficiale di tool.",
+      "config.performance.maxUpstreamTools": "Numero massimo totale di tool upstream",
+      "config.performance.maxUpstreamToolsHint":
+        "Include tool client e tool ufficiali deduplicati; 0 disabilita il limite. Il livello gratuito ha restituito 429 a 30 tool totali.",
       "config.performance.zeroWidth": "Parole chiave zero-width (una per riga)",
       "config.performance.zeroWidthHint":
         "Agisce solo su testo dei messaggi e descrizioni dei tool, inserendo U+200B tra i caratteri corrispondenti. Nomi di modello, tool e parametri non vengono modificati.",

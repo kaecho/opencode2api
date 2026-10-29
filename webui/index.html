@@ -1182,6 +1182,15 @@
                         0 表示不限制；网关随后还会追加官方工具集。
                       </p>
                     </div>
+                    <div class="field">
+                      <label for="c-max-upstream-tools" data-i18n="config.performance.maxUpstreamTools">
+                        最大上游工具总数
+                      </label>
+                      <input id="c-max-upstream-tools" type="number" min="0" max="256" />
+                      <p class="section-caption" data-i18n="config.performance.maxUpstreamToolsHint">
+                        包含客户端和去重后的官方工具；0 表示不限制。免费层实测总数为 30 时触发 429。
+                      </p>
+                    </div>
                     <div class="field full">
                       <label for="c-zero-width-keywords" data-i18n="config.performance.zeroWidth">
                         零宽字符关键词（每行一个）
