@@ -353,6 +353,12 @@ const DICTIONARY = {
       "config.performance.attemptTimeout": "Attempt timeout (seconds)",
       "config.performance.attemptTimeoutHint": "0 = follow the request timeout",
       "config.performance.firstEvent": "First SSE event timeout (seconds, 0 disables)",
+      "config.performance.maxClientTools": "Max client tools",
+      "config.performance.maxClientToolsHint":
+        "0 disables the cap; the gateway appends its official tool set afterward.",
+      "config.performance.zeroWidth": "Zero-width keywords (one per line)",
+      "config.performance.zeroWidthHint":
+        "Matches message text and tool descriptions only, inserting U+200B between matched characters. Model names, tool names, and tool arguments are untouched.",
       "config.performance.level": "Log level",
       "config.performance.ring": "Log ring size",
       "config.performance.dump":
@@ -973,6 +979,12 @@ const DICTIONARY = {
       "config.performance.attemptTimeoutHint": "0 = theo timeout của request",
       "config.performance.firstEvent":
         "Timeout sự kiện SSE đầu tiên (giây, 0 để tắt)",
+      "config.performance.maxClientTools": "Số tool client tối đa",
+      "config.performance.maxClientToolsHint":
+        "0 để tắt giới hạn; gateway vẫn thêm bộ tool chính thức sau đó.",
+      "config.performance.zeroWidth": "Từ khóa zero-width (mỗi dòng một từ)",
+      "config.performance.zeroWidthHint":
+        "Chỉ áp dụng cho nội dung tin nhắn và mô tả tool, chèn U+200B giữa các ký tự khớp. Tên model, tên tool và tham số tool không bị đổi.",
       "config.performance.level": "Mức log",
       "config.performance.ring": "Kích thước ring log",
       "config.performance.dump":
@@ -1604,6 +1616,12 @@ const DICTIONARY = {
       "config.performance.attemptTimeout": "Timeout del tentativo (secondi)",
       "config.performance.attemptTimeoutHint": "0 = segui il timeout della richiesta",
       "config.performance.firstEvent": "Timeout del primo evento SSE (secondi, 0 disabilita)",
+      "config.performance.maxClientTools": "Numero massimo di tool client",
+      "config.performance.maxClientToolsHint":
+        "0 disabilita il limite; il gateway aggiunge comunque il set ufficiale di tool.",
+      "config.performance.zeroWidth": "Parole chiave zero-width (una per riga)",
+      "config.performance.zeroWidthHint":
+        "Agisce solo su testo dei messaggi e descrizioni dei tool, inserendo U+200B tra i caratteri corrispondenti. Nomi di modello, tool e parametri non vengono modificati.",
       "config.performance.level": "Livello di log",
       "config.performance.ring": "Dimensione ring di log",
       "config.performance.dump":

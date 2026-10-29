@@ -80,6 +80,8 @@ function fillConfig(value) {
   $("#c-cooldown").value = value.performance.failure_cooldown_seconds;
   $("#c-attempt-timeout").value = value.performance.attempt_timeout_seconds;
   $("#c-first-event-timeout").value = value.performance.first_event_timeout_seconds || 0;
+  $("#c-max-client-tools").value = value.performance.max_client_tools || 0;
+  $("#c-zero-width-keywords").value = (value.performance.zero_width_keywords || []).join("\n");
   $("#c-level").value = value.logging.level;
   $("#c-ring").value = value.logging.ring_size;
   $("#c-dump-bodies").checked = !!value.logging.dump_request_bodies;
@@ -128,6 +130,11 @@ async function save(event) {
         failure_cooldown_seconds: numberValue("#c-cooldown"),
         attempt_timeout_seconds: numberValue("#c-attempt-timeout"),
         first_event_timeout_seconds: numberValue("#c-first-event-timeout"),
+        max_client_tools: numberValue("#c-max-client-tools"),
+        zero_width_keywords: $("#c-zero-width-keywords")
+          .value.split(/\r?\n/)
+          .map((item) => item.trim())
+          .filter(Boolean),
         proxy_block_threshold: numberValue("#c-proxy-block-threshold"),
         proxy_block_seconds: numberValue("#c-proxy-block-seconds"),
         require_proxy: $("#c-require-proxy").checked,

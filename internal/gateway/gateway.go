@@ -645,6 +645,11 @@ func (g *Gateway) prepareRouteBodies(from wire.Protocol, route models.Route, inp
 			}
 			return nil, fmt.Errorf("prepare %s upstream request: %w", tier, err)
 		}
+		trimmed := trimClientTools(upstreamPayload, g.cfg.Performance.MaxClientTools)
+		sanitized := applyZeroWidthKeywords(upstreamPayload, g.cfg.Performance.ZeroWidthKeywords)
+		if trimmed || sanitized {
+			g.logger.Debug("upstream request sanitized", "component", "upstream", "event", "request_sanitized", "tier", tier, "tools_trimmed", trimmed, "keywords_replaced", sanitized)
+		}
 		if effort := g.resolvedEffort(jsonutil.StringAt(upstreamPayload, "model"), tier, protocol); effort != "" {
 			wire.ForcedEffort(protocol, upstreamPayload, effort)
 		}

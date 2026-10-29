@@ -1173,6 +1173,24 @@
                       </label>
                       <input id="c-first-event-timeout" type="number" min="0" max="86400" />
                     </div>
+                    <div class="field">
+                      <label for="c-max-client-tools" data-i18n="config.performance.maxClientTools">
+                        最大客户端工具数
+                      </label>
+                      <input id="c-max-client-tools" type="number" min="0" max="256" />
+                      <p class="section-caption" data-i18n="config.performance.maxClientToolsHint">
+                        0 表示不限制；网关随后还会追加官方工具集。
+                      </p>
+                    </div>
+                    <div class="field full">
+                      <label for="c-zero-width-keywords" data-i18n="config.performance.zeroWidth">
+                        零宽字符关键词（每行一个）
+                      </label>
+                      <textarea id="c-zero-width-keywords" spellcheck="false" placeholder="AI agent"></textarea>
+                      <p class="section-caption" data-i18n="config.performance.zeroWidthHint">
+                        仅匹配消息文本和工具描述，在匹配字符之间插入 U+200B；不会修改模型名、工具名或工具参数。
+                      </p>
+                    </div>
                   </div>
                 </section>
               </div>

@@ -39,7 +39,9 @@
     "free_tier_block_seconds": 900,
     "proxy_block_threshold": 3,
     "proxy_block_seconds": 900,
-    "require_proxy": false
+    "require_proxy": false,
+    "max_client_tools": 0,
+    "zero_width_keywords": []
   },
   "logging": {
     "level": "info",

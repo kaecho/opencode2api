@@ -258,6 +258,13 @@ type PerformanceConfig struct {
 	// RequireProxy refuses to fall back to "direct" and returns 503 when no
 	// usable proxy is available.
 	RequireProxy bool `json:"require_proxy"`
+	// MaxClientTools caps the number of client-supplied tool definitions sent
+	// upstream. Zero disables the cap. The gateway appends its own official
+	// tool set after this check.
+	MaxClientTools int `json:"max_client_tools,omitempty"`
+	// ZeroWidthKeywords inserts U+200B inside configured substrings in message
+	// text and tool descriptions before the upstream request is encoded.
+	ZeroWidthKeywords []string `json:"zero_width_keywords,omitempty"`
 	// The four Zen-key policy fields below are accepted only so a config
 	// written by v1.4.17 or earlier still loads. They are ignored: Zen 429
 	// cooldowns now come from the upstream Retry-After header.
@@ -265,6 +272,29 @@ type PerformanceConfig struct {
 	ZenKeyLongFreezeSeconds  int `json:"zen_key_long_freeze_seconds,omitempty"`
 	ZenKey429Threshold       int `json:"zen_key_429_threshold,omitempty"`
 	ZenKey429WindowSeconds   int `json:"zen_key_429_window_seconds,omitempty"`
+}
+
+// normalizeKeywords trims, deduplicates, and bounds the request keyword list.
+// Matching is case-insensitive for ASCII, so dedupe uses the lower-case form.
+func normalizeKeywords(input []string) []string {
+	out := make([]string, 0, len(input))
+	seen := make(map[string]bool, len(input))
+	for _, raw := range input {
+		keyword := strings.TrimSpace(raw)
+		if keyword == "" {
+			continue
+		}
+		if len([]rune(keyword)) > 128 || len(out) >= 64 {
+			continue
+		}
+		key := strings.ToLower(keyword)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, keyword)
+	}
+	return out
 }
 
 // AttemptTimeout returns the bound for a single upstream attempt. When
@@ -414,6 +444,10 @@ func Normalize(path string, cfg Config) (Config, error) {
 	if cfg.Performance.ProxyBlockSeconds < 0 {
 		return Config{}, errors.New("performance.proxy_block_seconds must not be negative (0 uses the built-in block duration)")
 	}
+	if cfg.Performance.MaxClientTools < 0 {
+		return Config{}, errors.New("performance.max_client_tools must not be negative")
+	}
+	cfg.Performance.ZeroWidthKeywords = normalizeKeywords(cfg.Performance.ZeroWidthKeywords)
 	if cfg.Logging.Level != "debug" && cfg.Logging.Level != "info" && cfg.Logging.Level != "warn" && cfg.Logging.Level != "error" {
 		return Config{}, errors.New("logging.level must be debug, info, warn, or error")
 	}
