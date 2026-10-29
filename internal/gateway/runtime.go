@@ -201,9 +201,8 @@ func (m *RuntimeController) build(cfg config.Config) (*gatewayRuntime, error) {
 		return nil, err
 	}
 	gateway.rotation = m.rotation
-	policy := keyFreezePolicyFromConfig(cfg)
-	gateway.zenNodes.bindKeyState(m.keyStates, "zen", policy)
-	gateway.goNodes.bindKeyState(m.keyStates, "go", policy)
+	gateway.zenNodes.bindKeyState(m.keyStates, "zen")
+	gateway.goNodes.bindKeyState(m.keyStates, "go")
 	availabilityPath := ""
 	if m.configPath != "" {
 		availabilityPath = m.configPath + "." + config.Fingerprint(cfg.Upstream.Zen) + ".availability.json"
@@ -495,17 +494,13 @@ type WarpStatus struct {
 // characters): its tier, its current proxy binding, its consecutive failures
 // and any active cooldown.
 type KeyStatus struct {
-	ID              string     `json:"id"`
-	Fingerprint     string     `json:"fingerprint"`
-	Tier            string     `json:"tier"`
-	Index           int        `json:"index"`
-	ProxyIndex      int        `json:"proxy_index"`
-	Failures        uint32     `json:"failures"`
-	CooldownUntil   *time.Time `json:"cooldown_until,omitempty"`
-	LongFreezeUntil *time.Time `json:"long_freeze_until,omitempty"`
-	QuotaExhausted  bool       `json:"quota_exhausted"`
-	Consecutive429  uint32     `json:"consecutive_429"`
-	WindowStart     *time.Time `json:"window_start,omitempty"`
+	ID            string     `json:"id"`
+	Fingerprint   string     `json:"fingerprint"`
+	Tier          string     `json:"tier"`
+	Index         int        `json:"index"`
+	ProxyIndex    int        `json:"proxy_index"`
+	Failures      uint32     `json:"failures"`
+	CooldownUntil *time.Time `json:"cooldown_until,omitempty"`
 }
 
 // ProxyStatus describes one proxy route: its redacted address, its health,
@@ -715,19 +710,10 @@ func keyStatuses(tier string, pool *upstreamNodes) []KeyStatus {
 		status := KeyStatus{
 			ID: config.KeyDisplayID(node.key), Fingerprint: config.Fingerprint(node.key), Tier: tier,
 			Index: node.index, ProxyIndex: int(node.proxyIndex.Load()), Failures: node.failures.Load(),
-			QuotaExhausted: node.quotaExhausted.Load(), Consecutive429: node.consecutive429.Load(),
 		}
 		if until := node.cooldownUntil.Load(); until > now.UnixNano() {
 			value := time.Unix(0, until).UTC()
 			status.CooldownUntil = &value
-		}
-		if until := node.longFreezeUntil.Load(); until > now.UnixNano() {
-			value := time.Unix(0, until).UTC()
-			status.LongFreezeUntil = &value
-		}
-		if start := node.windowStart.Load(); start > 0 {
-			value := time.Unix(0, start).UTC()
-			status.WindowStart = &value
 		}
 		result = append(result, status)
 	}

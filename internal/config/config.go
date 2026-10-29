@@ -258,17 +258,13 @@ type PerformanceConfig struct {
 	// RequireProxy refuses to fall back to "direct" and returns 503 when no
 	// usable proxy is available.
 	RequireProxy bool `json:"require_proxy"`
-	// ZenKeyShortFreezeSeconds is the pause after one Zen-key 429. The
-	// upstream Retry-After is not used for this policy.
-	ZenKeyShortFreezeSeconds int `json:"zen_key_short_freeze_seconds"`
-	// ZenKeyLongFreezeSeconds is the quota-exhausted pause after reaching
-	// ZenKey429Threshold 429 responses within ZenKey429WindowSeconds.
-	ZenKeyLongFreezeSeconds int `json:"zen_key_long_freeze_seconds"`
-	// ZenKey429Threshold is the number of consecutive 429 responses that
-	// marks a Zen key quota-exhausted.
-	ZenKey429Threshold int `json:"zen_key_429_threshold"`
-	// ZenKey429WindowSeconds bounds the consecutive-429 window.
-	ZenKey429WindowSeconds int `json:"zen_key_429_window_seconds"`
+	// The four Zen-key policy fields below are accepted only so a config
+	// written by v1.4.17 or earlier still loads. They are ignored: Zen 429
+	// cooldowns now come from the upstream Retry-After header.
+	ZenKeyShortFreezeSeconds int `json:"zen_key_short_freeze_seconds,omitempty"`
+	ZenKeyLongFreezeSeconds  int `json:"zen_key_long_freeze_seconds,omitempty"`
+	ZenKey429Threshold       int `json:"zen_key_429_threshold,omitempty"`
+	ZenKey429WindowSeconds   int `json:"zen_key_429_window_seconds,omitempty"`
 }
 
 // AttemptTimeout returns the bound for a single upstream attempt. When
@@ -316,7 +312,7 @@ func Load(path string) (Config, error) {
 		Upstream:    UpstreamConfig{Zen: "https://opencode.ai/zen", Go: "https://opencode.ai/zen/go", Anonymous: "https://opencode.ai/inference"},
 		Retry:       RetryConfig{MaxAttempts: 3, TimeoutSeconds: 300},
 		Models:      ModelsConfig{RefreshSeconds: 300, Protocols: map[string]string{}},
-		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15, ProxyBlockThreshold: 3, ProxyBlockSeconds: 900, ZenKeyShortFreezeSeconds: 600, ZenKeyLongFreezeSeconds: 86400, ZenKey429Threshold: 3, ZenKey429WindowSeconds: 86400},
+		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15, ProxyBlockThreshold: 3, ProxyBlockSeconds: 900},
 		Logging:     LoggingConfig{Level: "info", RingSize: 2000},
 		WebUI:       WebUIConfig{Listen: "0.0.0.0:8081", SessionTTLMinutes: 720},
 		Prefer:      TierGo,
@@ -336,6 +332,12 @@ func Load(path string) (Config, error) {
 // either the JSON file or the authenticated management API. A relative
 // proxyfile is resolved against the directory of path.
 func Normalize(path string, cfg Config) (Config, error) {
+	// These fields are accepted for loading pre-1.4.18 configs but no longer
+	// drive scheduling; clear them so the next save drops them.
+	cfg.Performance.ZenKeyShortFreezeSeconds = 0
+	cfg.Performance.ZenKeyLongFreezeSeconds = 0
+	cfg.Performance.ZenKey429Threshold = 0
+	cfg.Performance.ZenKey429WindowSeconds = 0
 	cfg.Rotation.Defaults()
 	if err := cfg.Rotation.Validate(nil); err != nil {
 		return Config{}, err
@@ -411,9 +413,6 @@ func Normalize(path string, cfg Config) (Config, error) {
 	}
 	if cfg.Performance.ProxyBlockSeconds < 0 {
 		return Config{}, errors.New("performance.proxy_block_seconds must not be negative (0 uses the built-in block duration)")
-	}
-	if cfg.Performance.ZenKeyShortFreezeSeconds < 1 || cfg.Performance.ZenKeyLongFreezeSeconds < 1 || cfg.Performance.ZenKey429Threshold < 1 || cfg.Performance.ZenKey429WindowSeconds < 1 {
-		return Config{}, errors.New("zen key freeze durations, threshold, and window must be positive")
 	}
 	if cfg.Logging.Level != "debug" && cfg.Logging.Level != "info" && cfg.Logging.Level != "warn" && cfg.Logging.Level != "error" {
 		return Config{}, errors.New("logging.level must be debug, info, warn, or error")

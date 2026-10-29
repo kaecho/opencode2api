@@ -653,12 +653,6 @@ type upstreamNode struct {
 	proxyIndex     atomic.Int64
 	failures       atomic.Uint32
 	cooldownUntil  atomic.Int64
-	// Zen-specific 429 policy state. The short freeze reuses cooldownUntil;
-	// longFreezeUntil is the quota-exhausted period.
-	longFreezeUntil atomic.Int64
-	quotaExhausted  atomic.Bool
-	consecutive429  atomic.Uint32
-	windowStart     atomic.Int64
 }
 
 // upstreamNodes is one tier's key pool. bindingsMu serializes rebinding and
@@ -671,7 +665,6 @@ type upstreamNodes struct {
 	cooldown     time.Duration
 	requireProxy bool
 	tier         string
-	policy       keyFreezePolicy
 	keyStore     *keyStateStore
 	bindingsMu   sync.Mutex
 	bindingCount []int
@@ -887,7 +880,7 @@ func (c *nodeCursor) Next() *upstreamNode {
 		i := (c.next + offset) % len(c.pool.nodes)
 		node := c.pool.nodes[i]
 		c.pool.reactivateNode(node, now)
-		if node.cooldownUntil.Load() > now.UnixNano() || node.longFreezeUntil.Load() > now.UnixNano() {
+		if node.cooldownUntil.Load() > now.UnixNano() {
 			continue
 		}
 		proxy := c.pool.Proxy(node)
@@ -924,7 +917,7 @@ func (p *upstreamNodes) hasReadyKey(now time.Time) bool {
 		return false
 	}
 	for _, node := range p.nodes {
-		if node.cooldownUntil.Load() <= now.UnixNano() && node.longFreezeUntil.Load() <= now.UnixNano() {
+		if node.cooldownUntil.Load() <= now.UnixNano() {
 			return true
 		}
 	}
@@ -939,7 +932,7 @@ func (p *upstreamNodes) earliestKeyCooldown(now time.Time) time.Time {
 	}
 	var earliest time.Time
 	for _, node := range p.nodes {
-		until := max(node.cooldownUntil.Load(), node.longFreezeUntil.Load())
+		until := node.cooldownUntil.Load()
 		if until <= now.UnixNano() {
 			continue
 		}
@@ -952,7 +945,6 @@ func (p *upstreamNodes) earliestKeyCooldown(now time.Time) time.Time {
 }
 
 // earliestCooldown returns the earliest active key cooldown on a transport
-// that is otherwise usable, or the zero time when no key is cooling.// earliestCooldown returns the earliest active key cooldown on a transport
 // that is otherwise usable, or the zero time when no key is cooling.
 func (p *upstreamNodes) earliestCooldown(now time.Time) time.Time {
 	if p == nil {
@@ -960,7 +952,7 @@ func (p *upstreamNodes) earliestCooldown(now time.Time) time.Time {
 	}
 	var earliest time.Time
 	for _, node := range p.nodes {
-		until := max(node.cooldownUntil.Load(), node.longFreezeUntil.Load())
+		until := node.cooldownUntil.Load()
 		if until <= now.UnixNano() {
 			continue
 		}
@@ -980,31 +972,25 @@ func (p *upstreamNodes) MarkSuccess(node *upstreamNode) {
 	if node == nil {
 		return
 	}
-	changed := node.failures.Load() != 0 || node.cooldownUntil.Load() != 0 ||
-		node.longFreezeUntil.Load() != 0 || node.quotaExhausted.Load() ||
-		node.consecutive429.Load() != 0 || node.windowStart.Load() != 0
+	changed := node.failures.Load() != 0 || node.cooldownUntil.Load() != 0
 	node.failures.Store(0)
 	node.cooldownUntil.Store(0)
-	node.longFreezeUntil.Store(0)
-	node.quotaExhausted.Store(false)
-	node.consecutive429.Store(0)
-	node.windowStart.Store(0)
 	if changed {
 		p.saveNode(node)
 	}
 }
 
 // MarkFailure cools node down after an error or a 401, 403, 429 or 5xx
-// response; any other response leaves it untouched. A Zen-key 429 follows the
-// account policy: a short freeze, then a long quota-exhausted freeze after the
-// configured number of consecutive 429s within the window. Every other
-// failure keeps the existing exponential cooldown. The state is persisted.
+// response; any other response leaves it untouched. A Zen-key 429 uses the
+// upstream Retry-After header for the key's cooldown and does not apply a
+// consecutive-429 threshold. Every other failure keeps the existing
+// exponential cooldown. The state is persisted.
 func (p *upstreamNodes) MarkFailure(node *upstreamNode, resp *http.Response, err error) {
 	if node == nil {
 		return
 	}
 	if p.tier == "zen" && resp != nil && resp.StatusCode == http.StatusTooManyRequests {
-		p.markZen429(node)
+		p.markZen429(node, resp)
 		return
 	}
 	if err == nil && resp != nil && resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
@@ -1022,68 +1008,38 @@ func (p *upstreamNodes) MarkFailure(node *upstreamNode, resp *http.Response, err
 	p.saveNode(node)
 }
 
-// markZen429 applies the Zen account policy. It counts 429s in the configured
-// window, short-freezes on every one, and long-freezes plus marks quota
-// exhausted when the threshold is reached.
-func (p *upstreamNodes) markZen429(node *upstreamNode) {
-	now := time.Now()
+// defaultZen429Cooldown is used only when upstream omits a usable Retry-After
+// header. OpenCode's key rate limiter uses 60 seconds for the same case.
+const defaultZen429Cooldown = 60 * time.Second
+
+// markZen429 applies the upstream Retry-After duration to one Zen key. The
+// header is authoritative; no local threshold or quota marker is added.
+func (p *upstreamNodes) markZen429(node *upstreamNode, resp *http.Response) {
+	if node == nil || resp == nil {
+		return
+	}
 	node.failures.Add(1)
-	count := node.consecutive429.Load()
-	start := node.windowStart.Load()
-	if start == 0 || now.UnixNano()-start >= p.policy.window.Nanoseconds() {
-		start = now.UnixNano()
-		count = 1
-	} else {
-		count++
+	delay := parseRetryAfter(resp.Header.Get("Retry-After"))
+	if delay <= 0 {
+		delay = defaultZen429Cooldown
 	}
-	shortUntil := now.Add(p.policy.shortFreeze).UnixNano()
-	longUntil := int64(0)
-	if count >= p.policy.threshold {
-		longUntil = now.Add(p.policy.longFreeze).UnixNano()
-		node.quotaExhausted.Store(true)
-		count = 0
-		start = 0
-		shortUntil = 0
-	} else {
-		node.quotaExhausted.Store(false)
-	}
-	node.consecutive429.Store(count)
-	node.windowStart.Store(start)
-	node.longFreezeUntil.Store(longUntil)
-	node.cooldownUntil.Store(shortUntil)
+	node.cooldownUntil.Store(time.Now().Add(delay).UnixNano())
 	p.saveNode(node)
 }
 
-// reactivateNode clears expiry state lazily when a key is examined. A long
-// freeze end resets the 429 streak and quota marker so the account gets a
-// fresh window after the 24-hour pause.
+// reactivateNode clears an expired cooldown lazily when a key is examined.
 func (p *upstreamNodes) reactivateNode(node *upstreamNode, now time.Time) {
 	if node == nil {
-		return
-	}
-	long := node.longFreezeUntil.Load()
-	if long > 0 && long <= now.UnixNano() {
-		node.longFreezeUntil.Store(0)
-		node.quotaExhausted.Store(false)
-		node.consecutive429.Store(0)
-		node.windowStart.Store(0)
-		node.cooldownUntil.Store(0)
-		p.saveNode(node)
 		return
 	}
 	if until := node.cooldownUntil.Load(); until > 0 && until <= now.UnixNano() {
 		node.cooldownUntil.Store(0)
 	}
-	if start := node.windowStart.Load(); start > 0 && now.UnixNano()-start >= p.policy.window.Nanoseconds() {
-		node.windowStart.Store(0)
-		node.consecutive429.Store(0)
-	}
 }
 
-func (p *upstreamNodes) bindKeyState(store *keyStateStore, tier string, policy keyFreezePolicy) {
+func (p *upstreamNodes) bindKeyState(store *keyStateStore, tier string) {
 	p.keyStore = store
 	p.tier = tier
-	p.policy = policy
 	if store == nil {
 		return
 	}
@@ -1099,11 +1055,7 @@ func (p *upstreamNodes) bindKeyState(store *keyStateStore, tier string, policy k
 			continue
 		}
 		node.failures.Store(state.Failures)
-		node.cooldownUntil.Store(state.ShortFreezeUntil)
-		node.longFreezeUntil.Store(state.LongFreezeUntil)
-		node.quotaExhausted.Store(state.QuotaExhausted)
-		node.consecutive429.Store(state.Consecutive429)
-		node.windowStart.Store(state.WindowStart)
+		node.cooldownUntil.Store(state.CooldownUntil)
 	}
 }
 
@@ -1112,12 +1064,8 @@ func (p *upstreamNodes) saveNode(node *upstreamNode) {
 		return
 	}
 	state := keyState{
-		ShortFreezeUntil: node.cooldownUntil.Load(),
-		LongFreezeUntil:  node.longFreezeUntil.Load(),
-		QuotaExhausted:   node.quotaExhausted.Load(),
-		Consecutive429:   node.consecutive429.Load(),
-		WindowStart:      node.windowStart.Load(),
-		Failures:         node.failures.Load(),
+		CooldownUntil: node.cooldownUntil.Load(),
+		Failures:      node.failures.Load(),
 	}
 	if err := p.keyStore.save(p.tier, config.Fingerprint(node.key), state); err != nil && p.keyStore.logger != nil {
 		p.keyStore.logger.Warn("save upstream key state failed", "component", "keystate", "tier", p.tier, "key_id", config.KeyDisplayID(node.key), "error", err)

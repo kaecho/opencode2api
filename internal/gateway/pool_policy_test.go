@@ -174,12 +174,13 @@ func TestKeyPoolStopsAfterAllKeysCool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pool.bindKeyState(nil, "zen")
 	var calls int
 	proxy.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls++
 		return &http.Response{
 			StatusCode: http.StatusTooManyRequests,
-			Header:     http.Header{"Content-Type": {"application/json"}},
+			Header:     http.Header{"Content-Type": {"application/json"}, "Retry-After": {"120"}},
 			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"upstream rate limit"}}`)),
 			Request:    req,
 		}, nil
@@ -202,6 +203,9 @@ func TestKeyPoolStopsAfterAllKeysCool(t *testing.T) {
 	httpx.DrainAndClose(resp.Body)
 	if attempts != 2 || calls != 2 {
 		t.Fatalf("first request attempts=%d calls=%d, want 2/2", attempts, calls)
+	}
+	if remaining := cooldownRemaining(pool.nodes[0]); remaining < 110*time.Second || remaining > 130*time.Second {
+		t.Fatalf("key cooldown = %s, want about 120 seconds from Retry-After", remaining)
 	}
 	resp, err, attempts = g.doKeyUpstream(context.Background(), route, bodies, ids, 0)
 	if resp != nil || attempts != 0 {

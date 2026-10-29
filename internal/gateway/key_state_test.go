@@ -7,15 +7,24 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"opencode2api/internal/config"
 )
 
-func test429() *http.Response {
-	return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}
+func test429(retryAfter string) *http.Response {
+	header := http.Header{}
+	if retryAfter != "" {
+		header.Set("Retry-After", retryAfter)
+	}
+	return &http.Response{StatusCode: http.StatusTooManyRequests, Header: header}
 }
 
-func TestZen429FreezePolicyPersists(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.json")
+func cooldownRemaining(node *upstreamNode) time.Duration {
+	return time.Until(time.Unix(0, node.cooldownUntil.Load()))
+}
+
+func TestZen429UsesRetryAfterAndPersists(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store, err := openKeyStateStore(configPath, logger)
 	if err != nil {
@@ -26,27 +35,17 @@ func TestZen429FreezePolicyPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy := keyFreezePolicy{shortFreeze: 10 * time.Minute, longFreeze: 24 * time.Hour, threshold: 3, window: 24 * time.Hour}
-	pool.bindKeyState(store, "zen", policy)
+	pool.bindKeyState(store, "zen")
 	node := pool.nodes[0]
 
-	pool.MarkFailure(node, test429(), nil)
-	if node.cooldownUntil.Load() <= time.Now().UnixNano() {
-		t.Fatal("first 429 did not apply a short freeze")
+	pool.MarkFailure(node, test429("3600"), nil)
+	if remaining := cooldownRemaining(node); remaining < 59*time.Minute || remaining > 61*time.Minute {
+		t.Fatalf("cooldown = %s, want about one hour", remaining)
 	}
-	if node.consecutive429.Load() != 1 || node.quotaExhausted.Load() {
-		t.Fatalf("first 429 count=%d quota=%v", node.consecutive429.Load(), node.quotaExhausted.Load())
-	}
-	pool.MarkFailure(node, test429(), nil)
-	pool.MarkFailure(node, test429(), nil)
-	if node.longFreezeUntil.Load() <= time.Now().UnixNano() {
-		t.Fatal("third 429 did not apply a long freeze")
-	}
-	if !node.quotaExhausted.Load() || node.cooldownUntil.Load() != 0 {
-		t.Fatalf("quota=%v short=%d after threshold", node.quotaExhausted.Load(), node.cooldownUntil.Load())
+	if node.failures.Load() != 1 {
+		t.Fatalf("failures = %d, want 1", node.failures.Load())
 	}
 
-	// A fresh store and pool loaded from disk must see the long freeze.
 	if err := store.close(); err != nil {
 		t.Fatal(err)
 	}
@@ -54,40 +53,91 @@ func TestZen429FreezePolicyPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer reopened.close()
 	reloaded, err := nodePool([]string{"zen-key-1234567890"}, testTransports(proxy), time.Minute, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reloaded.bindKeyState(reopened, "zen", policy)
+	reloaded.bindKeyState(reopened, "zen")
 	loaded := reloaded.nodes[0]
-	if !loaded.quotaExhausted.Load() || loaded.longFreezeUntil.Load() <= time.Now().UnixNano() {
-		t.Fatalf("persisted quota state missing: quota=%v long=%d", loaded.quotaExhausted.Load(), loaded.longFreezeUntil.Load())
+	if remaining := cooldownRemaining(loaded); remaining < 59*time.Minute || remaining > 61*time.Minute {
+		t.Fatalf("persisted cooldown = %s, want about one hour", remaining)
 	}
-
 	reloaded.MarkSuccess(loaded)
-	if loaded.quotaExhausted.Load() || loaded.longFreezeUntil.Load() != 0 || loaded.consecutive429.Load() != 0 {
-		t.Fatal("success did not clear the persisted freeze state")
+	if loaded.cooldownUntil.Load() != 0 || loaded.failures.Load() != 0 {
+		t.Fatal("success did not clear the cooldown and failure count")
 	}
-	_ = reopened.close()
 }
 
-func TestZen429WindowResets(t *testing.T) {
+func TestZen429WithoutRetryAfterUsesDefault(t *testing.T) {
 	proxy := testProxy(0, "http://proxy", false)
 	pool, err := nodePool([]string{"zen-key-1234567890"}, testTransports(proxy), time.Minute, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool.bindKeyState(nil, "zen", keyFreezePolicy{
-		shortFreeze: 10 * time.Minute, longFreeze: 24 * time.Hour, threshold: 3, window: 24 * time.Hour,
-	})
+	pool.bindKeyState(nil, "zen")
 	node := pool.nodes[0]
-	node.windowStart.Store(time.Now().Add(-25 * time.Hour).UnixNano())
-	node.consecutive429.Store(2)
-	pool.MarkFailure(node, test429(), nil)
-	if node.consecutive429.Load() != 1 {
-		t.Fatalf("window reset count=%d, want 1", node.consecutive429.Load())
+	pool.MarkFailure(node, test429(""), nil)
+	if remaining := cooldownRemaining(node); remaining < 55*time.Second || remaining > 65*time.Second {
+		t.Fatalf("cooldown = %s, want about 60 seconds", remaining)
 	}
-	if node.longFreezeUntil.Load() != 0 {
-		t.Fatal("expired window still triggered a long freeze")
+}
+
+func TestZen429RetryAfterHTTPDate(t *testing.T) {
+	proxy := testProxy(0, "http://proxy", false)
+	pool, err := nodePool([]string{"zen-key-1234567890"}, testTransports(proxy), time.Minute, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.bindKeyState(nil, "zen")
+	node := pool.nodes[0]
+	pool.MarkFailure(node, test429(time.Now().Add(2*time.Hour).UTC().Format(http.TimeFormat)), nil)
+	if remaining := cooldownRemaining(node); remaining < 119*time.Minute || remaining > 121*time.Minute {
+		t.Fatalf("cooldown = %s, want about two hours", remaining)
+	}
+}
+
+func TestZen429RetryAfterReplacesCooldown(t *testing.T) {
+	proxy := testProxy(0, "http://proxy", false)
+	pool, err := nodePool([]string{"zen-key-1234567890"}, testTransports(proxy), time.Minute, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.bindKeyState(nil, "zen")
+	node := pool.nodes[0]
+	pool.MarkFailure(node, test429("3600"), nil)
+	pool.MarkFailure(node, test429("120"), nil)
+	if remaining := cooldownRemaining(node); remaining < 110*time.Second || remaining > 130*time.Second {
+		t.Fatalf("cooldown = %s, want about two minutes", remaining)
+	}
+}
+
+func TestLegacyZenPolicyStateIsIgnored(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	store, err := openKeyStateStore("", logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.close()
+	key := "zen-key-1234567890"
+	_, err = store.db.Exec(`INSERT INTO upstream_key_state
+		(tier, fingerprint, short_freeze_until, long_freeze_until, quota_exhausted,
+		 consecutive_429, window_start, failures, updated_at)
+		VALUES ('zen', ?, 0, ?, 1, 3, ?, 4, ?)`,
+		config.Fingerprint(key), time.Now().Add(24*time.Hour).UnixNano(), time.Now().UnixNano(), time.Now().UnixNano())
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := testProxy(0, "http://proxy", false)
+	pool, err := nodePool([]string{key}, testTransports(proxy), time.Minute, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool.bindKeyState(store, "zen")
+	if pool.nodes[0].cooldownUntil.Load() != 0 {
+		t.Fatal("legacy long freeze became a Retry-After cooldown")
+	}
+	if !pool.hasReadyKey(time.Now()) {
+		t.Fatal("legacy quota marker still blocks the key")
 	}
 }

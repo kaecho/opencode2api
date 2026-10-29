@@ -8,7 +8,7 @@ import (
 
 func TestLoadProxyPolicyDefaults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"server_keys":["local"],"anonymous":true}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"server_keys":["local"],"anonymous":true,"performance":{"zen_key_short_freeze_seconds":3600,"zen_key_long_freeze_seconds":86400,"zen_key_429_threshold":2,"zen_key_429_window_seconds":86400}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(path)
@@ -23,8 +23,5 @@ func TestLoadProxyPolicyDefaults(t *testing.T) {
 	}
 	if cfg.Performance.RequireProxy {
 		t.Fatal("require_proxy defaulted to true")
-	}
-	if cfg.Performance.ZenKeyShortFreezeSeconds != 600 || cfg.Performance.ZenKeyLongFreezeSeconds != 86400 || cfg.Performance.ZenKey429Threshold != 3 || cfg.Performance.ZenKey429WindowSeconds != 86400 {
-		t.Fatalf("unexpected zen 429 policy defaults: %+v", cfg.Performance)
 	}
 }

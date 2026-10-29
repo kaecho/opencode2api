@@ -292,7 +292,7 @@ Key 初始化时均衡分配到代理。真实流量可以触发代理检查、K
 
 网关自行生成的会话与项目标识按调用方的服务端 Key 隔离，不同 Key 不会共享上游会话、首选 Key 或匿名代理；客户端自带的官方 OpenCode 会话（`ses_…`）原样保留。没有显式会话 ID 时，使用系统提示词和第一条用户消息生成会话标识，因此同一 Key 下系统提示词和开场内容都相同的会话仍可能共享亲和性。需要互相隔离的用户应各自使用独立的服务端 Key。调整 Key 或代理池成员后，原有会话选择的节点可能变化。
 
-Zen Key 收到 429 后进入短暂冻结，默认 10 分钟。在 `performance.zen_key_429_window_seconds`（默认 24 小时）内连续遇到 `performance.zen_key_429_threshold`（默认 3）次 429 后，进入长冻结（默认 24 小时）并标记为额度用完。成功请求会清空连续次数和冻结状态。其他 Key 错误仍使用 `performance.failure_cooldown_seconds` 的指数退避，并遵守更长的 `Retry-After`。状态持久化到配置文件旁的 SQLite 数据库 `<config>.keys.db`，进程重启和配置热重载都不会丢失冻结、连续次数或额度用完标记。冻结中的 Key 会被跳过；所有可用 Key 都冻结时，请求直接返回本地 429，不再轮询整个 Key 池。如果配置了 Zen Key 但全部冻结，也会跳过无 Key 的匿名通道，直接返回本地 429。WebUI 的「上游 Key 池」页面列出这些 Key 的冻结状态和 Proxy 绑定，并提供新增、删除、重置冷却和调度规则设置；`#pool` 代理按每次连接轮换出口，因此不参与 429/403 封锁，只有静态代理会被封锁。本地调用密钥仍在「API Key 管理」页面。上游 403/429 的原始响应体不会透传：客户端只会收到本地的 403 `Temporarily unavailable` 或 429 `Rate limit exceeded`。
+Zen Key 收到 429 后，按上游 `Retry-After` 计算该 Key 的冷却时长；响应头缺失或无法解析时默认冷却 60 秒。不再使用连续 429 阈值、长冻结或额度用完标记。成功请求会清空冷却。其他 Key 错误仍使用 `performance.failure_cooldown_seconds` 的指数退避，并遵守更长的 `Retry-After`。冷却状态持久化到配置文件旁的 SQLite 数据库 `<config>.keys.db`，进程重启和配置热重载都不会丢失。冷却中的 Key 会被跳过；所有可用 Key 都冷却时，请求直接返回本地 429，不再轮询整个 Key 池。如果配置了 Zen Key 但全部冷却，也会跳过无 Key 的匿名通道，直接返回本地 429。WebUI「上游 Key 池」页显示 Key、剩余冷却时间和 Proxy 绑定，并提供新增、删除、重置操作。`#pool` 是轮换入口，不参与 429/403 封锁，只有静态 Proxy 会被封锁。本地调用密钥仍在「API Key 管理」页。上游 403/429 原始响应体不会透传：客户端收到本地 403 `Temporarily unavailable` 或本地 429 `Rate limit exceeded`。
 
 ## 配置参考
 
@@ -397,10 +397,6 @@ pool+http://127.0.0.1:7891
 | `performance.proxy_block_threshold`     | `3`    | 连续 429/403 达到该次数后封锁代理；0 关闭。      |
 | `performance.proxy_block_seconds`       | `900`  | 代理封锁时长；0 使用内置的 900 秒。              |
 | `performance.require_proxy`             | `false` | 没有可用代理时返回 503，不回退 `direct`。        |
-| `performance.zen_key_short_freeze_seconds` | `600` | 单次 Zen Key 429 后的短暂冻结时长。 |
-| `performance.zen_key_long_freeze_seconds` | `86400` | 达到 429 阈值后的额度用完冻结时长。 |
-| `performance.zen_key_429_threshold` | `3` | 触发长冻结的连续 429 次数。 |
-| `performance.zen_key_429_window_seconds` | `86400` | 统计连续 429 的时间窗口。 |
 | `performance.connect_timeout_seconds`   | `5`    | 建立连接的超时。                                 |
 | `performance.failure_cooldown_seconds`  | `15`   | 失败冷却基数。                                   |
 | `performance.max_idle_conns`            | `2048` | 每个代理 Transport 的空闲连接上限。              |

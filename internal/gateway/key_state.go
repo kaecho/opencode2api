@@ -9,55 +9,19 @@ import (
 	"sync"
 	"time"
 
-	"opencode2api/internal/config"
-
 	_ "modernc.org/sqlite"
 )
 
-// keyFreezePolicy is the Zen-key 429 schedule. The defaults keep the policy
-// useful when an older config leaves the fields at zero.
-type keyFreezePolicy struct {
-	shortFreeze time.Duration
-	longFreeze  time.Duration
-	threshold   uint32
-	window      time.Duration
-}
-
-func keyFreezePolicyFromConfig(cfg config.Config) keyFreezePolicy {
-	policy := keyFreezePolicy{
-		shortFreeze: time.Duration(cfg.Performance.ZenKeyShortFreezeSeconds) * time.Second,
-		longFreeze:  time.Duration(cfg.Performance.ZenKeyLongFreezeSeconds) * time.Second,
-		threshold:   uint32(cfg.Performance.ZenKey429Threshold),
-		window:      time.Duration(cfg.Performance.ZenKey429WindowSeconds) * time.Second,
-	}
-	if policy.shortFreeze <= 0 {
-		policy.shortFreeze = 10 * time.Minute
-	}
-	if policy.longFreeze <= 0 {
-		policy.longFreeze = 24 * time.Hour
-	}
-	if policy.threshold == 0 {
-		policy.threshold = 3
-	}
-	if policy.window <= 0 {
-		policy.window = 24 * time.Hour
-	}
-	return policy
-}
-
 // keyState is the persisted scheduling state of one upstream key. It is
-// keyed by tier and key fingerprint, never by the key value.
+// keyed by tier and key fingerprint, never by the key value. CooldownUntil is
+// set from the upstream Retry-After header on a Zen 429.
 type keyState struct {
-	ShortFreezeUntil int64
-	LongFreezeUntil  int64
-	QuotaExhausted   bool
-	Consecutive429   uint32
-	WindowStart      int64
-	Failures         uint32
+	CooldownUntil int64
+	Failures      uint32
 }
 
 // keyStateStore persists key state in SQLite beside the configuration file,
-// so a process restart does not resurrect a frozen or exhausted key.
+// so a process restart does not resurrect a frozen key.
 type keyStateStore struct {
 	db     *sql.DB
 	logger *slog.Logger
@@ -84,6 +48,9 @@ func openKeyStateStore(configPath string, logger *slog.Logger) (*keyStateStore, 
 			return nil, fmt.Errorf("configure key state database: %w", err)
 		}
 	}
+	// short_freeze_until is the historical column name for the key cooldown.
+	// The other 429 policy columns remain for existing databases and are always
+	// written as zero; current scheduling uses only the Retry-After cooldown.
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS upstream_key_state (
 		tier TEXT NOT NULL,
 		fingerprint TEXT NOT NULL,
@@ -107,18 +74,15 @@ func (s *keyStateStore) load(tier, fingerprint string) (keyState, bool, error) {
 		return keyState{}, false, nil
 	}
 	var state keyState
-	var quota int
-	err := s.db.QueryRow(`SELECT short_freeze_until, long_freeze_until, quota_exhausted,
-		consecutive_429, window_start, failures FROM upstream_key_state
+	err := s.db.QueryRow(`SELECT short_freeze_until, failures FROM upstream_key_state
 		WHERE tier = ? AND fingerprint = ?`, tier, fingerprint).
-		Scan(&state.ShortFreezeUntil, &state.LongFreezeUntil, &quota, &state.Consecutive429, &state.WindowStart, &state.Failures)
+		Scan(&state.CooldownUntil, &state.Failures)
 	if err == sql.ErrNoRows {
 		return keyState{}, false, nil
 	}
 	if err != nil {
 		return keyState{}, false, err
 	}
-	state.QuotaExhausted = quota != 0
 	return state, true, nil
 }
 
@@ -126,26 +90,21 @@ func (s *keyStateStore) save(tier, fingerprint string, state keyState) error {
 	if s == nil {
 		return nil
 	}
-	quota := 0
-	if state.QuotaExhausted {
-		quota = 1
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.db.Exec(`INSERT INTO upstream_key_state
 		(tier, fingerprint, short_freeze_until, long_freeze_until, quota_exhausted,
 		 consecutive_429, window_start, failures, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, 0, 0, 0, 0, ?, ?)
 		ON CONFLICT(tier, fingerprint) DO UPDATE SET
 			short_freeze_until=excluded.short_freeze_until,
-			long_freeze_until=excluded.long_freeze_until,
-			quota_exhausted=excluded.quota_exhausted,
-			consecutive_429=excluded.consecutive_429,
-			window_start=excluded.window_start,
+			long_freeze_until=0,
+			quota_exhausted=0,
+			consecutive_429=0,
+			window_start=0,
 			failures=excluded.failures,
 			updated_at=excluded.updated_at`,
-		tier, fingerprint, state.ShortFreezeUntil, state.LongFreezeUntil, quota,
-		state.Consecutive429, state.WindowStart, state.Failures, time.Now().UnixNano())
+		tier, fingerprint, state.CooldownUntil, state.Failures, time.Now().UnixNano())
 	return err
 }
 

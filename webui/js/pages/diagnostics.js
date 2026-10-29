@@ -12,6 +12,7 @@ import {
   emptyRow,
   formatNumber,
   renderFacts,
+  remainingDuration,
   timeOnly,
   toast,
 } from "../ui.js";
@@ -59,11 +60,7 @@ function renderKeys() {
     const group = el("optgroup", { label });
     for (const item of items) {
       const cooling = item.cooldown_until
-        ? t(
-            ` · 冷却至 ${new Date(item.cooldown_until).toLocaleTimeString(dateLocale(), { hour12: false })}`,
-            "playground.key.cooling",
-            new Date(item.cooldown_until).toLocaleTimeString(dateLocale(), { hour12: false }),
-          )
+        ? t(` · 剩余 ${remainingDuration(item.cooldown_until)}`, "playground.key.cooling", remainingDuration(item.cooldown_until))
         : "";
       group.append(
         el("option", {

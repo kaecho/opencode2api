@@ -1,6 +1,6 @@
 // Page: 概览 — readiness checklist, metrics, resources and token usage.
 import * as store from "../store.js";
-import { $, bindTabs, el, emptyRow, formatNumber, timeOnly } from "../ui.js";
+import { $, bindTabs, el, emptyRow, formatNumber, remainingDuration, timeOnly } from "../ui.js";
 import { t, onChange } from "../i18n.js";
 
 function renderChecklist() {
@@ -122,7 +122,7 @@ function renderResources(resources) {
         el("td", {
           class: `status ${cooling ? "warn" : "ok"}`,
           text: cooling
-            ? `${t("冷却中", "state.cooling")} ${timeOnly(new Date(key.cooldown_until))}`
+            ? `${t("冷却中", "state.cooling")} ${remainingDuration(key.cooldown_until)}`
             : t("可用", "state.available"),
         }),
       ]),

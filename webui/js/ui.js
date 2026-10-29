@@ -29,6 +29,32 @@ export function localTime(value) {
   return value ? new Date(value).toLocaleString(dateLocale(), { hour12: false }) : "—";
 }
 
+// remainingDuration turns a cooldown deadline into a localized "time left"
+// label. It intentionally does not expose the absolute recovery timestamp.
+export function remainingDuration(value) {
+  if (!value) return "—";
+  const end = new Date(value).getTime();
+  if (!Number.isFinite(end)) return "—";
+  let seconds = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+  if (seconds === 0) return "—";
+  const locale = dateLocale();
+  const parts = [];
+  for (const [unit, size] of [
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+    ["second", 1],
+  ]) {
+    const value = Math.floor(seconds / size);
+    if (value > 0) {
+      parts.push(new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "short" }).format(value));
+      seconds -= value * size;
+    }
+    if (parts.length === 2) break;
+  }
+  return parts.join(" ");
+}
+
 export function timeOnly(value) {
   return value ? new Date(value).toLocaleTimeString(dateLocale(), { hour12: false }) : "—";
 }
