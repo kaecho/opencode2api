@@ -33,7 +33,7 @@ Zen Key 的 429 调度以官方 `Retry-After` 为准：Key 收到 429 后，按�
 
 WebUI 新增「上游 Key 池」页面，默认显示 Zen Key，可切换 Go 或全部。列表包含 Key 尾码、Tier、冷却状态、连续失败次数、Proxy 绑定和剩余冷却时间；页面提供新增、删除和重置冷却操作。该页只操作上游调度 Key，不修改 `server_keys`；本地调用密钥仍在「API Key 管理」页。配置中心不再展示或编辑三类 Key，只保留匿名通道开关。重置只清除 Key 冷却，不解除 Proxy 封锁。
 
-`performance.max_client_tools`（默认 `0`）限制客户端提交的工具定义数量，网关随后追加自己的官方工具集；免费模型实测在追加 12 个官方工具后，客户端工具超过 17 个会返回 `FreeUsageLimitError`。`performance.zero_width_keywords` 是零宽字符替换列表，仅作用于消息文本和工具描述，在匹配字符之间插入 U+200B；它不会改变工具名、参数或模型名，也不能绕过工具数量限制。
+`performance.max_client_tools`（默认 `0`）限制客户端提交的工具定义数量，网关随后追加自己的官方工具集；免费模型实测在追加 12 个官方工具后，客户端工具超过 17 个会返回 `FreeUsageLimitError`。`performance.reuse_official_tools` 开启后，与官方工具同名的客户端工具会被直接省略，`bash`/`shell`、`web_fetch`/`webfetch`、`web_search`/`websearch` 也按同一能力合并；网关保留完整官方工具集，并在响应和历史消息中把官方调用名还原成客户端原名。剩余客户端工具使用 `clint_<SHA-256 摘要>` 形式的不可读名称，避免上游识别客户端工具词汇。
 
 `performance.proxy_block_threshold`（默认 `3`）控制同一个静态 Proxy 连续收到多少次 429/403 后封锁；`#pool` 是轮换入口，永不封锁；`performance.proxy_block_seconds`（默认 `900`）是封锁时长，到期自动恢复。封锁中的 Proxy 同时移出 Key 池和匿名池。`performance.require_proxy`（默认 `false`）开启后，没有可用 Proxy 时直接返回 503，不再回退到 `direct`。
 
