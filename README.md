@@ -401,8 +401,7 @@ Use it when the endpoint behind the URL already performs the rotation and the po
 | `performance.proxy_block_threshold`     | `3`     | Consecutive 429/403 responses that block a proxy; 0 disables it. |
 | `performance.proxy_block_seconds`       | `900`   | Proxy block duration; 0 uses the built-in 900 seconds. |
 | `performance.require_proxy`             | `false` | Return 503 instead of using `direct` when no proxy is usable. |
-| `performance.max_client_tools`          | `0`     | Cap client tool definitions before official tools are added; 0 disables. |
-| `performance.max_upstream_tools`        | `29`    | Cap total client plus de-duplicated official tools; 0 disables. The free tier returned 429 at 30 total. |
+| `performance.max_client_tools`          | `0`     | Cap client tool definitions before the official set is appended; 0 disables. The free tier accepts 17 client tools when the gateway appends its 12 official tools. |
 | `performance.zero_width_keywords`       | `[]`    | Keywords to split with U+200B in message text and tool descriptions. |
 | `performance.connect_timeout_seconds`   | `5`     | Connection establishment timeout.                      |
 | `performance.failure_cooldown_seconds`  | `15`    | Base failure cooldown.                                 |

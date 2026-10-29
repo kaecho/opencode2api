@@ -24,7 +24,7 @@ func TestLoadProxyPolicyDefaults(t *testing.T) {
 	if cfg.Performance.RequireProxy {
 		t.Fatal("require_proxy defaulted to true")
 	}
-	if cfg.Performance.MaxClientTools != 17 || cfg.Performance.MaxUpstreamTools != 29 || len(cfg.Performance.ZeroWidthKeywords) != 1 || cfg.Performance.ZeroWidthKeywords[0] != "AI agent" {
-		t.Fatalf("sanitizer config not normalized: client=%d upstream=%d keywords=%v", cfg.Performance.MaxClientTools, cfg.Performance.MaxUpstreamTools, cfg.Performance.ZeroWidthKeywords)
+	if cfg.Performance.MaxClientTools != 17 || len(cfg.Performance.ZeroWidthKeywords) != 1 || cfg.Performance.ZeroWidthKeywords[0] != "AI agent" {
+		t.Fatalf("sanitizer config not normalized: tools=%d keywords=%v", cfg.Performance.MaxClientTools, cfg.Performance.ZeroWidthKeywords)
 	}
 }

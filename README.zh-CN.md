@@ -397,8 +397,7 @@ pool+http://127.0.0.1:7891
 | `performance.proxy_block_threshold`     | `3`    | 连续 429/403 达到该次数后封锁代理；0 关闭。      |
 | `performance.proxy_block_seconds`       | `900`  | 代理封锁时长；0 使用内置的 900 秒。              |
 | `performance.require_proxy`             | `false` | 没有可用代理时返回 503，不回退 `direct`。        |
-| `performance.max_client_tools`          | `0`     | 限制客户端工具定义数量，之后再追加官方工具；0 表示不限制。 |
-| `performance.max_upstream_tools`        | `29`    | 限制客户端与去重后官方工具的总数；0 表示不限制。免费层实测总数 30 时返回 429。 |
+| `performance.max_client_tools`          | `0`     | 限制客户端工具定义数量，之后再追加官方工具集；0 表示不限制。免费层在网关追加 12 个官方工具后，客户端工具最多 17 个。 |
 | `performance.zero_width_keywords`       | `[]`    | 在消息文本和工具描述中插入 U+200B 的关键词列表。 |
 | `performance.connect_timeout_seconds`   | `5`    | 建立连接的超时。                                 |
 | `performance.failure_cooldown_seconds`  | `15`   | 失败冷却基数。                                   |

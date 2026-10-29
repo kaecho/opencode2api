@@ -41,7 +41,6 @@
     "proxy_block_seconds": 900,
     "require_proxy": false,
     "max_client_tools": 0,
-    "max_upstream_tools": 29,
     "zero_width_keywords": []
   },
   "logging": {

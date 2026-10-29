@@ -613,12 +613,6 @@ func (g *Gateway) inferenceClient(proxy *proxyTransport, baseURL, model string) 
 // payloads are decision requests, not agent traffic, so they are forwarded
 // verbatim, as is a body that is not a JSON object.
 func prepareAnonymousBody(body []byte, protocol wire.Protocol, v1 bool) ([]byte, *wire.ToolRenames) {
-	return prepareAnonymousBodyWithLimit(body, protocol, v1, 0)
-}
-
-// prepareAnonymousBodyWithLimit is prepareAnonymousBody with a total tool
-// budget. A non-positive maxTools keeps the historical unbounded append.
-func prepareAnonymousBodyWithLimit(body []byte, protocol wire.Protocol, v1 bool, maxTools int) ([]byte, *wire.ToolRenames) {
 	if protocol == wire.SystemOne {
 		return body, nil
 	}
@@ -637,7 +631,7 @@ func prepareAnonymousBodyWithLimit(body []byte, protocol wire.Protocol, v1 bool,
 	if injectOfficialPrompt(payload, protocol, v1) {
 		changed = true
 	}
-	renames, toolsChanged := renameAndCompleteTools(payload, protocol, v1, maxTools)
+	renames, toolsChanged := renameAndCompleteTools(payload, protocol, v1)
 	if toolsChanged {
 		changed = true
 	}
@@ -834,7 +828,7 @@ func (g *Gateway) shapeKeyBody(body []byte, route models.Route, tier config.Tier
 	if tier == config.TierGo {
 		baseURL = g.cfg.Upstream.Go
 	}
-	shaped, renames := prepareAnonymousBodyWithLimit(body, route.ProtocolFor(tier), models.IsV1Upstream(baseURL), g.cfg.Performance.MaxUpstreamTools)
+	shaped, renames := prepareAnonymousBody(body, route.ProtocolFor(tier), models.IsV1Upstream(baseURL))
 	return shaped, renames, !bytes.Equal(shaped, body)
 }
 

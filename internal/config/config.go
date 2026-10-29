@@ -259,12 +259,9 @@ type PerformanceConfig struct {
 	// usable proxy is available.
 	RequireProxy bool `json:"require_proxy"`
 	// MaxClientTools caps the number of client-supplied tool definitions sent
-	// upstream. Zero disables the cap.
+	// upstream. Zero disables the cap. The gateway appends its own official
+	// tool set after this check.
 	MaxClientTools int `json:"max_client_tools,omitempty"`
-	// MaxUpstreamTools caps the total client plus official tool definitions
-	// sent upstream. Zero disables the cap. Overlapping official tools are
-	// skipped before this budget is applied.
-	MaxUpstreamTools int `json:"max_upstream_tools,omitempty"`
 	// ZeroWidthKeywords inserts U+200B inside configured substrings in message
 	// text and tool descriptions before the upstream request is encoded.
 	ZeroWidthKeywords []string `json:"zero_width_keywords,omitempty"`
@@ -345,7 +342,7 @@ func Load(path string) (Config, error) {
 		Upstream:    UpstreamConfig{Zen: "https://opencode.ai/zen", Go: "https://opencode.ai/zen/go", Anonymous: "https://opencode.ai/inference"},
 		Retry:       RetryConfig{MaxAttempts: 3, TimeoutSeconds: 300},
 		Models:      ModelsConfig{RefreshSeconds: 300, Protocols: map[string]string{}},
-		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15, ProxyBlockThreshold: 3, ProxyBlockSeconds: 900, MaxUpstreamTools: 29},
+		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15, ProxyBlockThreshold: 3, ProxyBlockSeconds: 900},
 		Logging:     LoggingConfig{Level: "info", RingSize: 2000},
 		WebUI:       WebUIConfig{Listen: "0.0.0.0:8081", SessionTTLMinutes: 720},
 		Prefer:      TierGo,
@@ -449,9 +446,6 @@ func Normalize(path string, cfg Config) (Config, error) {
 	}
 	if cfg.Performance.MaxClientTools < 0 {
 		return Config{}, errors.New("performance.max_client_tools must not be negative")
-	}
-	if cfg.Performance.MaxUpstreamTools < 0 {
-		return Config{}, errors.New("performance.max_upstream_tools must not be negative")
 	}
 	cfg.Performance.ZeroWidthKeywords = normalizeKeywords(cfg.Performance.ZeroWidthKeywords)
 	if cfg.Logging.Level != "debug" && cfg.Logging.Level != "info" && cfg.Logging.Level != "warn" && cfg.Logging.Level != "error" {
