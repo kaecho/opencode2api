@@ -393,7 +393,7 @@ Use it when the endpoint behind the URL already performs the rotation and the po
 
 | Field                                   | Default | Meaning                                                |
 | --------------------------------------- | ------- | ------------------------------------------------------ |
-| `retry.max_attempts`                    | `3`     | Attempts per authenticated tier, including the first.  |
+| `retry.max_attempts`                    | `2`     | Attempts per authenticated tier, including the first.  |
 | `retry.timeout_seconds`                 | `300`   | Total inference timeout, including stream consumption. |
 | `performance.attempt_timeout_seconds`   | `0`     | Whole-attempt bound; 0 uses the request timeout.       |
 | `performance.max_anonymous_exits`       | `8`     | Distinct static proxy exits per anonymous request.     |

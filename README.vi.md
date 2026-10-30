@@ -380,7 +380,7 @@ Dùng khi bản thân endpoint sau URL đã tự luân chuyển, còn từng exi
 
 | Trường                                   | Mặc định | Ý nghĩa                                                     |
 | ---------------------------------------- | -------- | ----------------------------------------------------------- |
-| `retry.max_attempts`                     | `3`      | Số lần thử cho mỗi tier có xác thực, kể cả lần đầu.        |
+| `retry.max_attempts`                     | `2`      | Số lần thử cho mỗi tier có xác thực, kể cả lần đầu.        |
 | `retry.timeout_seconds`                  | `300`    | Timeout suy luận tổng, gồm cả thời gian đọc luồng.          |
 | `performance.attempt_timeout_seconds`    | `0`      | Giới hạn cho một lần thử; 0 dùng timeout của request.      |
 | `performance.max_anonymous_exits`        | `8`      | Số exit proxy tĩnh tối đa cho mỗi request ẩn danh.          |

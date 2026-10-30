@@ -343,7 +343,7 @@ func Load(path string) (Config, error) {
 		Listen:      "127.0.0.1:8080",
 		Warp:        WarpConfig{PoolSize: 2, Stack: string(warp.DefaultStack)},
 		Upstream:    UpstreamConfig{Zen: "https://opencode.ai/zen", Go: "https://opencode.ai/zen/go", Anonymous: "https://opencode.ai/inference"},
-		Retry:       RetryConfig{MaxAttempts: 3, TimeoutSeconds: 300},
+		Retry:       RetryConfig{MaxAttempts: 2, TimeoutSeconds: 300},
 		Models:      ModelsConfig{RefreshSeconds: 300, Protocols: map[string]string{}},
 		Performance: PerformanceConfig{MaxIdleConns: 2048, MaxIdleConnsPerHost: 256, MaxConnsPerHost: 0, IdleConnTimeoutSeconds: 120, ConnectTimeoutSeconds: 5, FailureCooldownSeconds: 15, ProxyBlockThreshold: 3, ProxyBlockSeconds: 900},
 		Logging:     LoggingConfig{Level: "info", RingSize: 2000},

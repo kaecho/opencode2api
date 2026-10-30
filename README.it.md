@@ -372,7 +372,7 @@ Usalo quando l'endpoint dietro l'URL esegue già la rotazione e i singoli IP di 
 
 | Campo                                      | Predefinito | Descrizione                                                |
 | ------------------------------------------ | ----------- | ---------------------------------------------------------- |
-| `retry.max_attempts`                       | `3`         | Tentativi per tier autenticato, incluso il primo.         |
+| `retry.max_attempts`                       | `2`         | Tentativi per tier autenticato, incluso il primo.         |
 | `retry.timeout_seconds`                    | `300`       | Timeout totale di inferenza, compreso lo stream.          |
 | `performance.attempt_timeout_seconds`      | `0`         | Limite per tentativo; 0 usa il timeout della richiesta.   |
 | `performance.connect_timeout_seconds`      | `5`         | Timeout per stabilire la connessione.                     |
