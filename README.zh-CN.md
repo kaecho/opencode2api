@@ -389,7 +389,7 @@ pool+http://127.0.0.1:7891
 
 | 字段                                    | 默认值 | 含义                                             |
 | --------------------------------------- | ------ | ------------------------------------------------ |
-| `retry.max_attempts`                    | `2`    | 每个认证 Tier 的尝试次数，包含首次请求。         |
+| `retry.max_attempts`                    | `3`    | 每个认证 Tier 的尝试次数，包含首次请求。         |
 | `retry.timeout_seconds`                 | `300`  | 推理请求总超时，包含流式响应读取。               |
 | `performance.attempt_timeout_seconds`   | `0`    | 单次尝试的总超时；0 表示使用请求总超时。         |
 | `performance.max_anonymous_exits`       | `8`    | 每个匿名请求最多尝试的静态代理出口数。           |
