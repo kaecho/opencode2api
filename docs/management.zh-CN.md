@@ -29,7 +29,7 @@
 
 ## Key 冷却与 Proxy 封锁
 
-Zen Key 的 429 调度以官方 `Retry-After` 为准：Key 收到 429 后，按该响应头的秒数或 HTTP 日期冻结；响应头缺失或无法解析时默认冻结 60 秒。不再使用连续 429 阈值、长冻结或额度用完标记。成功请求会清空冷却。状态写入配置文件旁的 SQLite 数据库 `<config>.keys.db`，重启或热重载后仍然有效。其他 Key 错误仍使用 `performance.failure_cooldown_seconds` 的指数退避。所有可用 Key 都冷却时，请求直接返回 429，不再轮询整个 Key 池。如果配置了 Zen Key 但全部冷却，也会跳过无 Key 的匿名请求。
+Zen Key 的 429 调度以官方 `Retry-After` 为准：Key 收到 429 后，按该响应头的秒数或 HTTP 日期冻结；响应头缺失或无法解析时默认冻结 60 秒。走 `#pool` 代理时第一次 429 不冻结 Key：同一个 Key 换新出口重试，最多两次（每次新建 TCP 连接），只有第二次仍 429 才冻结。不再使用连续 429 阈值、长冻结或额度用完标记。成功请求会清空冷却。状态写入配置文件旁的 SQLite 数据库 `<config>.keys.db`，重启或热重载后仍然有效。其他 Key 错误仍使用 `performance.failure_cooldown_seconds` 的指数退避。所有可用 Key 都冷却时，请求直接返回 429，不再轮询整个 Key 池。如果配置了 Zen Key 但全部冷却，也会跳过无 Key 的匿名请求。
 
 WebUI 新增「上游 Key 池」页面，默认显示 Zen Key，可切换 Go 或全部。列表包含 Key 尾码、Tier、冷却状态、连续失败次数、Proxy 绑定和剩余冷却时间；页面提供新增、删除和重置冷却操作。该页只操作上游调度 Key，不修改 `server_keys`；本地调用密钥仍在「API Key 管理」页。配置中心不再展示或编辑三类 Key，只保留匿名通道开关。重置只清除 Key 冷却，不解除 Proxy 封锁。
 

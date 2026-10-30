@@ -915,6 +915,14 @@ func (g *Gateway) doSelectedKeyUpstream(ctx context.Context, route models.Route,
 	return resp, nil, 1
 }
 
+// pool429Attempts is how many times one key is tried on a rotating #pool
+// proxy before a 429 cools it. Each try opens a new tunnel (pool transports
+// disable keep-alives), so the retries draw fresh exit IPs; only the last 429
+// reaches MarkFailure and the key's Retry-After cooldown. The free tier's
+// quota belongs to the exit IP, not the key, so one burned IP must not bench
+// a healthy key.
+const pool429Attempts = 2
+
 // doKeyUpstream rotates through the keys of route.Tier, starting from the
 // session's affinity key, for at most Retry.MaxAttempts attempts; free-model
 // bodies are shaped first (see shapeKeyBody). Every attempt is fed to
@@ -922,10 +930,11 @@ func (g *Gateway) doSelectedKeyUpstream(ctx context.Context, route models.Route,
 // 2xx ends the loop, and so does a non-retryable 4xx (see
 // isNonRetryableClientResponse), which is returned as is so the caller can
 // move on to the next tier; after any other response or transport error the
-// next key is tried. An attempt that finishes after ctx is done ends the loop
-// without being held against the key or the proxy. It returns the last
-// response (body still open), else the last error, plus the number of
-// attempts made.
+// next key is tried. On a #pool proxy a 429 is first retried on fresh exits
+// (see pool429Attempts) before it is held against the key. An attempt that
+// finishes after ctx is done ends the loop without being held against the key
+// or the proxy. It returns the last response (body still open), else the last
+// error, plus the number of attempts made.
 func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies map[config.Tier][]byte, ids identity.RequestIDs, attemptOffset int) (*http.Response, error, int) {
 	var lastResponse *http.Response
 	var lastErr error
@@ -1000,19 +1009,11 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 			lastResponse = nil
 		}
 		attemptIDs := identity.ForUpstreamKey(ids, config.Fingerprint(node.key), time.Now())
-		req, err := upstreamRequest(ctx, baseURL, route.Protocol, body, attemptIDs, node.key)
-		if err != nil {
-			return nil, err, attempts
-		}
-		setOrgHeader(req, baseURL, node.org)
 		proxy := nodes.Proxy(node)
 		if !useWARP {
 			if proxy == nil {
 				lastErr = errors.New("upstream key has no proxy binding")
 				break
-			}
-			if proxy.pool {
-				req.Close = true
 			}
 		}
 		keyID := config.KeyDisplayID(node.key)
@@ -1021,39 +1022,77 @@ func (g *Gateway) doKeyUpstream(ctx context.Context, route models.Route, bodies 
 		} else {
 			setRequestCredential(ctx, route.Tier, keyID, "key", false, proxy)
 		}
-		attemptStarted := time.Now()
+		// A #pool proxy opens a new tunnel per request, hence a new exit IP.
+		// Retry a 429 on fresh exits before holding it against the key: only
+		// the last try reaches observeKeyResult and its Retry-After cooldown.
+		tries := 1
+		if !useWARP && proxy.pool {
+			tries = pool429Attempts
+		}
 		var resp *http.Response
+		var err error
 		var egress string
-		if useWARP {
-			resp, egress, err = g.doWARPAttempt(ctx, req, baseURL, route.ID, time.Duration(g.cfg.Performance.FirstEventTimeoutSeconds)*time.Second)
-		} else {
-			resp, err = doInferenceAttempt(g.inferenceClient(proxy, baseURL, route.ID), req, time.Duration(g.cfg.Performance.FirstEventTimeoutSeconds)*time.Second, g.attemptTimeout)
-		}
-		attemptDuration := time.Since(attemptStarted)
-		if ctx.Err() != nil {
-			// The request budget expired while this attempt was in flight. A
-			// canceled context says nothing about the key or the proxy: without
-			// this guard the instant DeadlineExceeded would cool a healthy key
-			// and evict a healthy proxy from the pool.
-			lastResponse, lastErr = resp, err
-			if lastErr == nil && lastResponse == nil {
-				lastErr = ctx.Err()
-			}
-			break
-		}
+		var attemptDuration time.Duration
 		recordProxy := proxy
 		proxyLabel := ""
+		for try := 1; try <= tries; try++ {
+			if ctx.Err() != nil {
+				if lastErr == nil {
+					lastErr = ctx.Err()
+				}
+				break
+			}
+			req, reqErr := upstreamRequest(ctx, baseURL, route.Protocol, body, attemptIDs, node.key)
+			if reqErr != nil {
+				return nil, reqErr, attempts
+			}
+			setOrgHeader(req, baseURL, node.org)
+			if !useWARP && proxy.pool {
+				req.Close = true
+			}
+			attemptStarted := time.Now()
+			if useWARP {
+				resp, egress, err = g.doWARPAttempt(ctx, req, baseURL, route.ID, time.Duration(g.cfg.Performance.FirstEventTimeoutSeconds)*time.Second)
+			} else {
+				resp, err = doInferenceAttempt(g.inferenceClient(proxy, baseURL, route.ID), req, time.Duration(g.cfg.Performance.FirstEventTimeoutSeconds)*time.Second, g.attemptTimeout)
+			}
+			attemptDuration = time.Since(attemptStarted)
+			if ctx.Err() != nil {
+				// The request budget expired while this attempt was in flight. A
+				// canceled context says nothing about the key or the proxy: without
+				// this guard the instant DeadlineExceeded would cool a healthy key
+				// and evict a healthy proxy from the pool.
+				lastResponse, lastErr = resp, err
+				if lastErr == nil && lastResponse == nil {
+					lastErr = ctx.Err()
+				}
+				break
+			}
+			if useWARP {
+				recordProxy = warpProxy(egress)
+				proxyLabel = egress
+			} else {
+				recordProxy = proxy
+				proxyLabel = config.RedactURL(proxy.name)
+			}
+			g.recordUpstreamAttempt(ctx, route, ids, attemptOffset+attempts, keyID, "key", false, recordProxy, resp, err, attemptDuration)
+			g.logRateLimitResponse(ids.Request, route.ID, keyID, resp)
+			if err != nil || resp == nil || resp.StatusCode != http.StatusTooManyRequests || try == tries {
+				break
+			}
+			g.logger.Debug("upstream rate limited the exit; retrying the key on a fresh proxy connection", "component", "upstream", "event", "key_429_retry", "request_id", ids.Request, "attempt", attempts, "try", try, "tries", tries, "tier", route.Tier, "key_id", keyID, "proxy", proxyLabel, "retry_after", resp.Header.Get("Retry-After"))
+			httpx.DrainAndClose(resp.Body)
+			resp = nil
+		}
+		if ctx.Err() != nil {
+			break
+		}
 		if useWARP {
-			recordProxy = warpProxy(egress)
-			proxyLabel = egress
 			g.observeKeyResultWARP(ctx, nodes, node, resp, err)
 		} else {
-			proxyLabel = config.RedactURL(proxy.name)
 			g.observeKeyResult(ctx, nodes, node, proxy, resp, err)
 		}
-		g.recordUpstreamAttempt(ctx, route, ids, attemptOffset+attempts, keyID, "key", false, recordProxy, resp, err, attemptDuration)
-		g.logRateLimitResponse(ids.Request, route.ID, keyID, resp)
-		if err == nil && resp.StatusCode/100 == 2 {
+		if err == nil && resp != nil && resp.StatusCode/100 == 2 {
 			g.logger.Debug("upstream accepted request", "component", "upstream", "event", "attempt_succeeded", "request_id", ids.Request, "attempt", attempts, "tier", route.Tier, "key_id", keyID, "proxy", proxyLabel, "status", resp.StatusCode, "duration_ms", attemptDuration.Milliseconds())
 			return resp, nil, attempts
 		}
